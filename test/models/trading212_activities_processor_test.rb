@@ -210,7 +210,7 @@ class Trading212ActivitiesProcessorTest < ActiveSupport::TestCase
 
   # === process cash transactions ===
 
-  test "processes DEPOSIT as Contribution" do
+  test "processes DEPOSIT as a funds movement, not an investment contribution" do
     @trading212_account.update!(
       raw_transactions_payload: [
         {
@@ -228,9 +228,109 @@ class Trading212ActivitiesProcessorTest < ActiveSupport::TestCase
     assert_equal 1, result[:transactions]
     entry = @account.entries.find_by(external_id: "trading212_transaction_txn_001")
     assert_not_nil entry
-    assert_equal "Contribution", entry.entryable.investment_activity_label
+    assert_equal "funds_movement", entry.entryable.kind
+    assert_nil entry.entryable.investment_activity_label
+    assert_nil entry.entryable.category_id
     # Deposits are negative in Sure (inflow)
     assert entry.amount.negative?
+  end
+
+  test "a deposit is neither income nor spending, and buying an ETF with it is not spending either" do
+    @family.update!(currency: "USD")
+    @trading212_account.update!(
+      raw_transactions_payload: [
+        { "reference" => "top_up", "type" => "DEPOSIT", "amount" => "1000.00", "dateTime" => "2024-06-15T10:00:00Z" }
+      ],
+      raw_orders_payload: [
+        {
+          "order" => { "id" => "etf_buy", "status" => "FILLED", "side" => "BUY",
+                       "instrument" => { "ticker" => "VWCE_EQ", "name" => "ETF" }, "filledValue" => "1000.00" },
+          "fill" => { "id" => "etf_fill", "quantity" => "10", "price" => "100.00", "filledAt" => "2024-06-16T10:00:00Z" }
+        }
+      ]
+    )
+
+    Trading212Account::ActivitiesProcessor.new(@trading212_account).process
+
+    totals = IncomeStatement.new(@family, accounts: @family.accounts.where(id: @account.id))
+      .totals(date_range: Date.new(2024, 6, 1)..Date.new(2024, 6, 30))
+    assert_equal Money.new(0, "USD"), totals.income_money
+    assert_equal Money.new(0, "USD"), totals.expense_money
+  end
+
+  test "a bank top-up matched to its Trading 212 deposit is not counted as spending" do
+    @family.update!(currency: "USD")
+    bank = accounts(:depository)
+    bank_leg = bank.entries.create!(name: "To Trading 212", amount: 1000, currency: "USD", date: Date.new(2024, 6, 14),
+      entryable: Transaction.new)
+    @trading212_account.update!(raw_transactions_payload: [
+      { "reference" => "top_up", "type" => "DEPOSIT", "amount" => "1000.00", "dateTime" => "2024-06-15T10:00:00Z" }
+    ])
+
+    Trading212Account::ActivitiesProcessor.new(@trading212_account).process
+    @family.auto_match_transfers!
+
+    deposit = @account.entries.find_by!(external_id: "trading212_transaction_top_up").transaction
+    assert_equal bank_leg.transaction, deposit.reload.transfer&.outflow_transaction
+    assert_equal "funds_movement", bank_leg.transaction.reload.kind
+    assert_nil bank_leg.transaction.category_id
+
+    totals = IncomeStatement.new(@family, accounts: @family.accounts.where(id: [ bank.id, @account.id ]))
+      .totals(transactions_scope: Transaction.where(id: [ bank_leg.entryable_id, deposit.id ]),
+        date_range: Date.new(2024, 6, 14)..Date.new(2024, 6, 15))
+    assert_equal Money.new(0, "USD"), totals.expense_money
+    assert_equal Money.new(0, "USD"), totals.income_money
+  end
+
+  test "resync resets a deposit and its matched bank leg that earlier syncs stored as investment contributions" do
+    category = ensure_investment_contributions_category(@family)
+    bank = accounts(:depository)
+    legacy = Account::ProviderImportAdapter.new(@account).import_transaction(
+      external_id: "trading212_transaction_legacy", amount: -500, currency: "USD", date: Date.new(2024, 6, 15),
+      name: "Contribution", source: "trading212", investment_activity_label: "Contribution"
+    ).transaction
+    assert_equal "investment_contribution", legacy.kind
+    bank_leg = bank.entries.create!(name: "To Trading 212", amount: 500, currency: "USD", date: Date.new(2024, 6, 15),
+      entryable: Transaction.new(kind: "investment_contribution", category: category)).transaction
+    Transfer.create!(inflow_transaction: legacy, outflow_transaction: bank_leg, status: "confirmed")
+
+    @trading212_account.update!(raw_transactions_payload: [
+      { "reference" => "legacy", "type" => "DEPOSIT", "amount" => "500.00", "dateTime" => "2024-06-15T10:00:00Z" }
+    ])
+    2.times { Trading212Account::ActivitiesProcessor.new(@trading212_account).process }
+
+    legacy.reload
+    assert_equal "funds_movement", legacy.kind
+    assert_nil legacy.investment_activity_label
+    assert_nil legacy.category_id
+    bank_leg.reload
+    assert_equal "funds_movement", bank_leg.kind
+    assert_nil bank_leg.category_id
+    assert legacy.transfer.present?, "The matched transfer is kept"
+  end
+
+  test "resync keeps classifications the user edited or a Rule assigned on a legacy deposit" do
+    category = ensure_investment_contributions_category(@family)
+    edited = Account::ProviderImportAdapter.new(@account).import_transaction(
+      external_id: "trading212_transaction_edited", amount: -500, currency: "USD", date: Date.new(2024, 6, 15),
+      name: "Contribution", source: "trading212", investment_activity_label: "Contribution"
+    )
+    edited.update!(user_modified: true)
+    ruled = Account::ProviderImportAdapter.new(@account).import_transaction(
+      external_id: "trading212_transaction_ruled", amount: -300, currency: "USD", date: Date.new(2024, 6, 15),
+      name: "Contribution", source: "trading212", kind: "standard"
+    ).transaction
+    assert ruled.enrich_attribute(:category_id, category.id, source: "rule")
+
+    @trading212_account.update!(raw_transactions_payload: [
+      { "reference" => "edited", "type" => "DEPOSIT", "amount" => "500.00", "dateTime" => "2024-06-15T10:00:00Z" },
+      { "reference" => "ruled", "type" => "DEPOSIT", "amount" => "300.00", "dateTime" => "2024-06-15T10:00:00Z" }
+    ])
+    Trading212Account::ActivitiesProcessor.new(@trading212_account).process
+
+    assert_equal "investment_contribution", edited.transaction.reload.kind
+    assert_equal "Contribution", edited.transaction.investment_activity_label
+    assert_equal category.id, ruled.reload.category_id
   end
 
   test "processes WITHDRAW as Withdrawal" do

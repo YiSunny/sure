@@ -99,6 +99,23 @@ class Transfer::CreatorTest < ActiveSupport::TestCase
     assert_equal crypto_account.currency, inflow.entry.currency
   end
 
+  test "creates funds_movement when transferring from depository to a Trading 212 account" do
+    trading212_accounts(:main_account).ensure_account_provider!(@destination_account)
+
+    transfer = Transfer::Creator.new(
+      family: @family,
+      source_account_id: @source_account.id,
+      destination_account_id: @destination_account.id,
+      date: @date,
+      amount: @amount
+    ).create
+
+    outflow = transfer.outflow_transaction
+    assert_equal "funds_movement", outflow.kind
+    assert_nil outflow.category, "A Trading 212 top-up is not budgeted as an investment contribution"
+    assert_equal "funds_movement", transfer.inflow_transaction.kind
+  end
+
   test "creates funds_movement for investment to investment transfer (rollover)" do
     # Rollover case: investment → investment should stay as funds_movement
     other_investment = @family.accounts.create!(name: "IRA", balance: 5000, currency: "USD", accountable: Investment.new)

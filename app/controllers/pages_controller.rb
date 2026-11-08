@@ -46,6 +46,7 @@ class PagesController < ApplicationController
 
     # Use IncomeStatement for all cashflow data (now includes categorized trades)
     income_statement = Current.family.income_statement
+    @unresolved_trading212_count = income_statement.unresolved_trading212_count(date_range: @period.date_range)
     income_totals = income_statement.income_totals(period: @period)
     expense_totals = income_statement.expense_totals(period: @period)
     net_totals = income_statement.net_category_totals(period: @period)

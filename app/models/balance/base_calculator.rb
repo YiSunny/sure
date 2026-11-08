@@ -46,12 +46,37 @@ class Balance::BaseCalculator
 
     def derive_cash_balance_on_date_from_total(total_balance:, date:)
       if account.balance_type == :investment
+        # A broker snapshot has an explicit allocated cash bucket. Quote/FX
+        # reconciliation differences are not spendable cash. Only use it at the
+        # matching current anchor, never for arbitrary historical valuations.
+        if date == account.current_anchor_date && total_balance == account.current_anchor_balance
+          provider = trading212_portfolio
+          if provider && provider.last_processed_at&.to_date == date
+            return account.cash_balance
+          end
+        end
         total_balance - holdings_value_for_date(date)
       elsif account.balance_type == :cash
         total_balance
       else
         0
       end
+    end
+
+    def trading212_portfolio
+      return @trading212_portfolio if defined?(@trading212_portfolio)
+
+      @trading212_portfolio = account.account_providers.where(provider_type: "Trading212Account")
+        .includes(:provider).filter_map(&:provider).find(&:portfolio?)
+    end
+
+    def provider_snapshot_adjustment(date)
+      provider = trading212_portfolio
+      return 0 unless provider && provider.last_processed_at&.to_date == date && date == account.current_anchor_date
+
+      # Summary and positions are separate quotes. Keep their small residual in
+      # an explicit non-cash reconciliation column, not cash or a fake entry.
+      account.current_anchor_balance - account.cash_balance - holdings_value_for_date(date)
     end
 
     def cash_adjustments_for_date(start_cash, end_cash, net_cash_flows)

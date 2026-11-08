@@ -1,0 +1,55 @@
+en:
+  trading212_split:
+    title: Separate Trading 212 cash and portfolio
+    preview: Preview
+    warning: Back up and reconcile first. This moves provider cash activity into a linked Cash account. Disabled accounts remain disabled. Historical transfer conflicts must be resolved first.
+    cash_breakdown: Cash is account total minus reported portfolio value, including Spending Pot cash omitted from available-to-trade funds. Pie cash is retained as reported portfolio information, not added again. This is not a separate API-reported card spending limit.
+    summary: "Total %{total}; cash %{cash}; investments %{investments}. Cash entries: %{cash_entries}. Transfers requiring review: %{transfers_to_review}."
+    confirm: Create coordinated Cash and Portfolio accounts
+    created: Trading 212 accounts separated. Reconcile both accounts before enabling synchronization.
+    cash_name: "%{name} — Cash"
+    cash_account: Cash
+    incompatible_link: Link Cash to an unconnected manual cash account, or Portfolio to an unconnected manual investment account.
+    link_existing: Or link each discovered account to a compatible manual account you can manage.
+    portfolio_name: "%{name} — Portfolio"
+    unclassified_cash: Unclassified cash movement
+    currency_mismatch: Trading 212 currency differs from the existing ledger. Review the denomination before syncing; no account or historical amount has been converted.
+    incomplete_history: Trading 212 history exceeded the pagination limit. Sync stopped without importing partial history; review history coverage before retrying.
+    unsupported_history: Trading 212 returned an unsupported cash activity. Sync stopped without guessing its financial direction. Review the activity before retrying.
+    settlement: Trade settlement
+    referral_reward: Referral reward
+    cashback_allocation: Cashback allocated to Pie
+    unresolved_settlement: Trade funding is unresolved. Trading 212 does not identify Main versus Pie funding in this history. Review the allocation before syncing; no Cash movement has been guessed.
+    statement_title: Enrich Trading 212 cash from history CSV
+    statement_help: Upload the original Trading 212 history export. Cash rows match only by reference in this account. Trades remain API-owned. Posted dates and amounts are preserved. Missing history is not assumed to be zero.
+    csv_file: History CSV
+    statement_applied: Statement classifications saved. Existing rows were enriched; matched future rows will use these classifications on the next sync.
+    coverage: "Matched export activity: %{start} to %{end}. This does not prove complete history outside or within this range."
+    account_coverage: "Trading 212 CSV coverage: %{start} to %{end}; %{count} cash movements still need classification. Earlier history may be unavailable; dates do not guarantee uninterrupted coverage. Main and Spending Pot cash are combined here."
+    none: not uploaded
+    never: not yet processed
+    diagnostics: "Trading 212 ledger last processed: %{processed}; snapshot fetched: %{fetched}. Trades needing funding review: %{unresolved}; unsupported cash activities: %{unsupported}. Historical charts are estimates until funding and history coverage are reconciled; missing months are not zero. Pie cash is allocated portfolio cash, not card spending money."
+    stale_data: Sync failed or the ledger is older than 24 hours. Displayed balances may be stale.
+    quote_difference: "Summary-versus-positions quote difference: %{amount}. This is a non-cash reconciliation difference, not spendable cash."
+    stale_split: Fetch a complete Trading 212 snapshot less than 24 hours old before splitting. No balances have been changed.
+    inflow: "Inflow +%{amount}"
+    outflow: "Outflow −%{amount}"
+    provisional_reports: "Reports are provisional: %{count} Trading 212 cash movements need classification or funding reconciliation. Unclassified cash is excluded from income/spending; unmatched bank counterparts may still affect totals. No bank transaction has been guessed or hidden."
+    matched: Matched cash records
+    conflicts: Conflicts requiring review
+    action: Action
+    name: Name
+    amount: Amount
+    category: Proposed category
+    category_review: Review category manually
+    purchase_date: Purchase date
+    posted_date: Posted date (preserved)
+    state: Result
+    row: CSV row
+    reason: Reason
+    apply: Apply reviewed classifications
+    revert: Revert this batch if entries have not changed
+    statement_reverted: Statement changes reverted. Upload coverage remains unverified.
+    skipped:
+      one: One API-owned trade/dividend row skipped.
+      other: "%{count} API-owned trade/dividend rows skipped."

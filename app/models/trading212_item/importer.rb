@@ -12,6 +12,7 @@ class Trading212Item::Importer
       trading212_item.update!(raw_instruments_payload: instruments, status: :good)
 
       summary = provider.fetch_account_summary
+      summary_fetched_at = Time.current
       account_id = summary["id"]&.to_s
       cash_data = (summary["cash"] || {}).with_indifferent_access
 
@@ -23,22 +24,35 @@ class Trading212Item::Importer
       cash_balance = parse_decimal(cash_data[:availableToTrade])
       current_balance = parse_decimal(summary["totalValue"]) || BigDecimal("0")
 
-      currency = trading212_item.currency.presence || trading212_item.family.currency
+      currency = summary["currency"].presence || trading212_item.currency.presence || trading212_item.family.currency
 
-      t212_account = trading212_item.trading212_accounts.find_or_initialize_by(trading212_account_id: account_id)
+      raise Trading212Account::Snapshot::Invalid, "Account summary ID is missing" if account_id.blank?
+      t212_account = trading212_item.trading212_accounts.find_by(trading212_account_id: account_id, kind: "portfolio") ||
+        trading212_item.trading212_accounts.find_or_initialize_by(trading212_account_id: account_id, kind: "combined")
+      t212_account.validate_currency!(currency)
+      t212_account.sibling("cash")&.validate_currency!(currency) if t212_account.portfolio?
+      Trading212Account::Snapshot.new(summary).validate! if t212_account.portfolio?
       t212_account.assign_attributes(
-        name: build_account_name(account_id),
+        name: t212_account.portfolio? ? t212_account.name : build_account_name(account_id),
         currency: currency,
         current_balance: current_balance,
         cash_balance: cash_balance,
+        raw_summary_payload: summary,
         raw_positions_payload: provider.fetch_positions,
         raw_orders_payload: provider.fetch_all_orders,
         raw_dividends_payload: provider.fetch_all_dividends,
         raw_transactions_payload: provider.fetch_all_transactions,
-        last_positions_sync: Time.current,
+        last_positions_sync: summary_fetched_at,
         last_orders_sync: Time.current
       )
+      t212_account.snapshot.validate_positions!(Array(t212_account.raw_positions_payload)) if t212_account.portfolio?
       t212_account.save!
+
+      if t212_account.portfolio?
+        cash = t212_account.sibling("cash") || raise(Trading212Account::Snapshot::Invalid, "Cash account is missing")
+        cash.update!(raw_summary_payload: summary, currency: currency, current_balance: t212_account.snapshot.cash,
+          cash_balance: t212_account.snapshot.cash, last_positions_sync: t212_account.last_positions_sync)
+      end
     end
 
     { success: true }

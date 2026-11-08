@@ -69,6 +69,7 @@ class Transaction < ApplicationRecord
 
   enum :kind, {
     standard: "standard", # A regular transaction, included in budget analytics
+    unclassified: "unclassified", # Posted cash whose economic purpose is not yet known
     funds_movement: "funds_movement", # Movement of funds between accounts, excluded from budget analytics
     cc_payment: "cc_payment", # A CC payment, excluded from budget analytics (CC payments offset the sum of expense transactions)
     loan_payment: "loan_payment", # A payment to a Loan account, treated as an expense in budgets
@@ -83,7 +84,18 @@ class Transaction < ApplicationRecord
   # Kinds excluded from budget/income-statement analytics.
   # loan_payment and investment_contribution are intentionally NOT here —
   # they represent real cash outflow from a budgeting perspective.
-  BUDGET_EXCLUDED_KINDS = %w[funds_movement one_time cc_payment].freeze
+  BUDGET_EXCLUDED_KINDS = %w[funds_movement one_time cc_payment unclassified].freeze
+
+  # Also honor uncertainty on older/protected rows whose kind must not be
+  # rewritten. This is reporting classification, not settlement/pending status:
+  # the posted amount must still affect balances and remain in the ledger.
+  scope :classified_for_reporting, -> {
+    where("transactions.kind <> 'unclassified' AND (transactions.extra -> 'trading212' ->> 'classification_pending') IS DISTINCT FROM 'true'")
+  }
+
+  def self.classified_for_reporting_sql(table_alias)
+    "AND #{table_alias}.kind <> 'unclassified' AND (#{table_alias}.extra -> 'trading212' ->> 'classification_pending') IS DISTINCT FROM 'true'"
+  end
 
   # Kinds that never belong in the "Uncategorized" bucket, whichever surface
   # asks for it (the Transactions category filter, the uncategorized badge

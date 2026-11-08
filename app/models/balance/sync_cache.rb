@@ -46,7 +46,7 @@ class Balance::SyncCache
 
         totals = account.holdings.each_with_object(Hash.new(0)) do |h, acc|
           begin
-            converted = Money.new(h.amount, h.currency).exchange_to(account.currency, date: h.date).amount
+            converted = h.value_money.exchange_to(account.currency, date: h.date).amount
           rescue Money::ConversionError => error
             # Fall back to a 1:1 rate, which misstates the holding by the FX gap. Excluding it
             # instead would be worse here: `BaseCalculator#derive_cash_balance_on_date_from_total`

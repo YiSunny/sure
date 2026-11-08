@@ -1074,7 +1074,7 @@ class Family::DataImporter
       destination_account = transfer.inflow_transaction.entry.account
       return "loan_payment" if destination_account.loan?
       return "cc_payment" if destination_account.liability?
-      return "investment_contribution" if investment_account?(destination_account) && !investment_account?(source_account)
+      return "investment_contribution" if destination_account.receives_investment_contributions? && !investment_account?(source_account)
 
       "funds_movement"
     end

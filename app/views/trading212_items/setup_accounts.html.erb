@@ -78,8 +78,8 @@
                       <p class="text-sm text-secondary">
                         <%= t(
                           ".available_accounts.account_summary",
-                          account_type: t(".available_accounts.account_type_investment"),
-                          balance: number_to_currency(t212_account.current_balance || 0, unit: Money::Currency.new(t212_account.currency.presence || Current.family.currency).symbol)
+                          account_type: t212_account.cash? ? t("trading212_split.cash_account") : t(".available_accounts.account_type_investment"),
+                          balance: number_to_currency(t212_account.account_balance || 0, unit: Money::Currency.new(t212_account.currency.presence || Current.family.currency).symbol)
                         ) %>
                       </p>
                       <% if t212_account.trading212_account_id.present? %>
@@ -111,7 +111,7 @@
 
         <% if @unlinked_accounts.any? && @linkable_accounts.any? %>
           <div class="border-t border-secondary pt-4 mt-2">
-            <p class="text-xs text-secondary mb-3"><%= t(".link_existing.description") %></p>
+            <p class="text-xs text-secondary mb-3"><%= t("trading212_split.link_existing") %></p>
             <div class="space-y-2">
               <% @unlinked_accounts.each do |t212_account| %>
                 <%= form_with url: link_existing_account_trading212_items_path, method: :post, data: { turbo_frame: "_top" } do |link_form| %>
@@ -119,7 +119,7 @@
                   <p class="text-xs text-primary mb-1"><%= t212_account.name %></p>
                   <div class="flex items-center gap-2">
                     <%= link_form.select :account_id,
-                          options_for_select(@linkable_accounts.map { |a| [ t(".link_existing.manual_account_option", name: a.name, balance: number_to_currency(a.balance, unit: Money::Currency.new(a.currency.presence || Current.family.currency).symbol)), a.id ] }),
+                          options_for_select(@linkable_accounts.select { |a| t212_account.linkable_to?(a) }.map { |a| [ t(".link_existing.manual_account_option", name: a.name, balance: number_to_currency(a.balance, unit: Money::Currency.new(a.currency.presence || Current.family.currency).symbol)), a.id ] }),
                           { prompt: t(".link_existing.select_prompt") },
                           class: "bg-container border border-primary rounded px-2 py-1 text-sm text-primary flex-1 min-w-0" %>
                     <%= render DS::Button.new(

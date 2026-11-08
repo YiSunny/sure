@@ -8,8 +8,18 @@ class Trading212Account::HoldingsProcessor
   def process
     return unless account.present?
 
-    Array(@trading212_account.raw_positions_payload).each do |position|
-      process_position(position.with_indifferent_access)
+    positions = Array(@trading212_account.raw_positions_payload)
+    @trading212_account.snapshot.validate_positions!(positions) if @trading212_account.portfolio?
+    processed = positions.count do |position|
+      process_position(position.with_indifferent_access).present?
+    end
+    if @trading212_account.portfolio?
+      raise Trading212Account::Snapshot::Invalid, "Incomplete holdings snapshot" unless processed == positions.size
+      ids = positions.map { |position| position.dig("instrument", "ticker") }.compact
+      prefix = "trading212_position_#{@trading212_account.trading212_account_id}_"
+      current_ids = ids.map { |ticker| "#{prefix}#{ticker}_#{Date.current}" }
+      account.holdings.where(account_provider_id: @trading212_account.account_provider&.id, date: Date.current)
+        .where.not(external_id: current_ids).destroy_all
     end
   end
 
@@ -43,25 +53,35 @@ class Trading212Account::HoldingsProcessor
       quantity = parse_decimal(position[:quantity])
       price    = parse_decimal(position[:currentPrice])
       return unless quantity && price && quantity > 0
+      position_ccy, price = normalize_minor_units(position_ccy, price)
 
       amount = quantity * price
       date   = Date.current
 
       external_id = "trading212_position_#{@trading212_account.trading212_account_id}_#{t212_ticker}_#{date}"
 
-      import_adapter.import_holding(
+      holding = import_adapter.import_holding(
         security:           security,
         quantity:           quantity,
         amount:             amount,
         currency:           position_ccy,
         date:               date,
         price:              price,
-        cost_basis:         parse_decimal(position[:averagePricePaid]),
+        cost_basis:         normalize_minor_units(instrument[:currency].presence || currency, parse_decimal(position[:averagePricePaid])).last,
         external_id:        external_id,
         source:             "trading212",
         account_provider_id: @trading212_account.account_provider&.id,
         delete_future_holdings: false
       )
+      if @trading212_account.portfolio?
+        wallet = position.fetch(:walletImpact).with_indifferent_access
+        value = parse_decimal(wallet[:currentValue])
+        raise Trading212Account::Snapshot::Invalid, "Invalid position wallet value" unless value&.finite? && value >= 0 && wallet[:currency] == currency
+        raise Trading212Account::Snapshot::Invalid, "Position belongs to another provider" unless holding.account_provider_id == @trading212_account.account_provider.id
+
+        holding.update!(provider_value: value, provider_value_currency: wallet[:currency])
+      end
+      holding
     rescue => e
       DebugLogEntry.capture(
         category: "sync",
@@ -72,5 +92,6 @@ class Trading212Account::HoldingsProcessor
         provider_key: "trading212",
         metadata: { ticker: t212_ticker, trading212_account_id: @trading212_account.id }
       )
+      raise if @trading212_account.portfolio?
     end
 end

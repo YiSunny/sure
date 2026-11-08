@@ -36,7 +36,8 @@ module Family::AutoTransferMatchable
     outflow_transaction_id: nil,
     account_id: nil,
     include_rejected: true,
-    restrict_cross_currency_to_linked_accounts: false
+    restrict_cross_currency_to_linked_accounts: false,
+    restrict_trading212_cash: false
   )
     date_window = coerce_transfer_match_date_window!(date_window)
     exchange_rate_tolerance = coerce_transfer_match_exchange_rate_tolerance!(exchange_rate_tolerance)
@@ -52,6 +53,7 @@ module Family::AutoTransferMatchable
         account_id:,
         include_rejected:,
         restrict_cross_currency_to_linked_accounts:,
+        restrict_trading212_cash:,
         lower_exchange_rate_bound: 1 - exchange_rate_tolerance,
         upper_exchange_rate_bound: 1 + exchange_rate_tolerance
       }
@@ -70,12 +72,13 @@ module Family::AutoTransferMatchable
       account_id: account&.id,
       include_rejected: false,
       exchange_rate_tolerance:,
-      restrict_cross_currency_to_linked_accounts: true
+      restrict_cross_currency_to_linked_accounts: true,
+      restrict_trading212_cash: true
     )
     transaction_ids = candidates_scope.flat_map do |match|
       [ match.inflow_transaction_id, match.outflow_transaction_id ]
     end.uniq
-    transactions_by_id = Transaction.includes(entry: :account).where(id: transaction_ids).index_by(&:id)
+    transactions_by_id = Transaction.includes(entry: { account: :account_providers }).where(id: transaction_ids).index_by(&:id)
 
     # Track which transactions we've already matched to avoid duplicates
     used_transaction_ids = Set.new
@@ -251,6 +254,8 @@ module Family::AutoTransferMatchable
             inflow_accounts.status IN ('draft', 'active') AND
             outflow_accounts.status IN ('draft', 'active') AND
             existing_transfers.id IS NULL AND
+            #{trading212_transfer_eligible_sql("inflow_candidates")} AND
+            #{trading212_transfer_eligible_sql("outflow_candidates")} AND
             (:account_id IS NULL OR inflow_candidates.account_id = :account_id OR outflow_candidates.account_id = :account_id) AND
             (:inflow_transaction_id IS NULL OR inflow_candidates.entryable_id = :inflow_transaction_id) AND
             (:outflow_transaction_id IS NULL OR outflow_candidates.entryable_id = :outflow_transaction_id) AND
@@ -305,6 +310,8 @@ module Family::AutoTransferMatchable
             inflow_accounts.status IN ('draft', 'active') AND
             outflow_accounts.status IN ('draft', 'active') AND
             existing_transfers.id IS NULL AND
+            #{trading212_transfer_eligible_sql("inflow_candidates")} AND
+            #{trading212_transfer_eligible_sql("outflow_candidates")} AND
             (:account_id IS NULL OR inflow_candidates.account_id = :account_id OR outflow_candidates.account_id = :account_id) AND
             ABS(inflow_candidates.amount / NULLIF(outflow_candidates.amount * COALESCE(
               NULLIF(direct_rates.rate, 0),
@@ -321,6 +328,25 @@ module Family::AutoTransferMatchable
             )
         ) transfer_match_candidates
         ORDER BY transfer_match_candidates.match_rank ASC, transfer_match_candidates.date_diff ASC
+      SQL
+    end
+
+    # Trading 212's generic cash API types include purchases and cashback. Only
+    # statement-confirmed funding movements are automatic transfer candidates.
+    # Restrict the rule to the split Cash role, leaving all other providers alone.
+    def trading212_transfer_eligible_sql(entry_alias)
+      <<~SQL.squish
+        (:restrict_trading212_cash = FALSE OR NOT EXISTS (
+          SELECT 1 FROM account_providers t212_ap
+          JOIN trading212_accounts t212_pa ON t212_pa.id = t212_ap.provider_id
+          JOIN transactions t212_tx ON t212_tx.id = #{entry_alias}.entryable_id
+          WHERE t212_ap.account_id = #{entry_alias}.account_id
+            AND t212_ap.provider_type = 'Trading212Account'
+            AND (
+              (t212_pa.kind = 'cash' AND COALESCE(t212_tx.extra -> 'trading212_statement' ->> 'action', '') NOT IN ('Deposit', 'Withdrawal'))
+              OR (#{entry_alias}.source = 'trading212' AND t212_tx.extra -> 'trading212' ->> 'funding_type' = 'referral_reward')
+            )
+        ))
       SQL
     end
 

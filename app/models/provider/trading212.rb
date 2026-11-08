@@ -6,6 +6,7 @@ class Provider::Trading212
   class AuthenticationError < Error; end
   class ConfigurationError < Error; end
   class RateLimitError < Error; end
+  class IncompleteHistoryError < Error; end
   class ApiError < Error
     attr_reader :status_code, :response_body
 
@@ -107,7 +108,13 @@ class Provider::Trading212
         next_page_path = data["nextPagePath"]
         pages_fetched += 1
 
-        break if next_page_path.nil? || pages_fetched >= MAX_PAGES
+        break if next_page_path.blank?
+        if pages_fetched >= MAX_PAGES
+          DebugLogEntry.capture(category: "sync", level: "error", source: "trading212", provider_key: "trading212",
+            message: "Trading 212 history exceeded the pagination safety limit; partial history was not imported",
+            metadata: { endpoint: path, pages_fetched: pages_fetched, records_fetched: items.size })
+          raise IncompleteHistoryError, I18n.t("trading212_split.incomplete_history")
+        end
 
         sleep(10)  # 6 req/min limit on history endpoint
       end

@@ -214,6 +214,12 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :trading212_splits, only: [ :show, :create ]
+  resources :trading212_statements, only: [ :new, :create, :show ] do
+    post :apply, on: :member
+    post :revert, on: :member
+  end
+
   # Trade Republic routes (login steps are TR-specific: web login needs a
   # two-phase initiate/confirm handshake with the Trade Republic app)
   resources :trade_republic_items, only: [ :show, :create, :update, :destroy ] do

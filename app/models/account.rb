@@ -396,9 +396,9 @@ class Account < ApplicationRecord
         balance: 0,
         cash_balance: 0,
         currency: trading212_account.currency.presence || family.currency,
-        accountable_type: "Investment",
+        accountable_type: trading212_account.cash? ? "Depository" : "Investment",
         accountable_attributes: {
-          subtype: "brokerage"
+          subtype: trading212_account.cash? ? "checking" : "brokerage"
         }
       }
 
@@ -524,6 +524,14 @@ class Account < ApplicationRecord
     account_providers.none? &&
       plaid_account_id.blank? &&
       simplefin_account_id.blank?
+  end
+
+  # Money moved in from another account is an investment contribution (a
+  # budgeted outflow) only for pure investment accounts. A Trading 212 account
+  # doubles as a card/spending account, so a top-up there is an ordinary
+  # transfer; buying securities later is a trade, not spending.
+  def receives_investment_contributions?
+    (investment? || crypto?) && account_providers.none? { |link| link.provider_type == "Trading212Account" }
   end
 
   # Default GoalPledge kind for this account. Manual accounts get

@@ -49,6 +49,7 @@ class IncomeStatement::DailyExpenseTotals
           #{accounts_join_sql}
           #{exchange_rates_join_sql}
           WHERE at.kind NOT IN (#{budget_excluded_kinds_sql})
+            #{Transaction.classified_for_reporting_sql("at")}
             #{investment_activity_label_sql("at")}
             AND ae.excluded = false
             AND a.family_id = :family_id

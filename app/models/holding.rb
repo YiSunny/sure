@@ -3,6 +3,16 @@ class Holding < ApplicationRecord
 
   monetize :amount
 
+  # A provider wallet valuation belongs only to this holding's dated snapshot;
+  # calculated historical holdings continue to use native prices and dated FX.
+  def value_money
+    if provider_value.present? && provider_value_currency.present? && account_provider_id.present?
+      Money.new(provider_value, provider_value_currency)
+    else
+      amount_money
+    end
+  end
+
   # Cost basis source priority (higher = takes precedence)
   COST_BASIS_SOURCE_PRIORITY = {
     nil => 0,
@@ -257,9 +267,7 @@ class Holding < ApplicationRecord
 
   private
     def amount_in_account_currency
-      return amount if currency == account.currency
-
-      Money.new(amount, currency).exchange_to(account.currency, date: date).amount
+      value_money.exchange_to(account.currency, date: date).amount
     rescue Money::ConversionError
       amount
     end

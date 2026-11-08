@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_002000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -1184,6 +1184,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.date "date", null: false
     t.string "external_id"
     t.decimal "price", precision: 19, scale: 4, null: false
+    t.decimal "provider_value", precision: 19, scale: 4
+    t.string "provider_value_currency"
     t.uuid "provider_security_id"
     t.decimal "qty", precision: 34, scale: 18, null: false
     t.uuid "security_id", null: false
@@ -2697,18 +2699,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.datetime "created_at", null: false
     t.string "currency"
     t.decimal "current_balance", precision: 19, scale: 4
+    t.string "kind", default: "combined", null: false
     t.datetime "last_orders_sync"
     t.datetime "last_positions_sync"
+    t.datetime "last_processed_at"
     t.string "name"
     t.jsonb "raw_dividends_payload", default: [], null: false
     t.jsonb "raw_orders_payload", default: [], null: false
     t.jsonb "raw_positions_payload", default: [], null: false
+    t.jsonb "raw_summary_payload", default: {}, null: false
     t.jsonb "raw_transactions_payload", default: [], null: false
+    t.jsonb "settlement_allocations", default: {}, null: false
+    t.jsonb "split_audit_payload", default: {}, null: false
+    t.jsonb "statement_enrichments", default: {}, null: false
     t.string "trading212_account_id"
     t.uuid "trading212_item_id", null: false
     t.datetime "updated_at", null: false
-    t.index ["trading212_item_id", "trading212_account_id"], name: "index_trading212_accounts_on_item_and_account_id", unique: true, where: "(trading212_account_id IS NOT NULL)"
+    t.index ["trading212_item_id", "trading212_account_id", "kind"], name: "index_trading212_accounts_on_item_account_kind", unique: true, where: "(trading212_account_id IS NOT NULL)"
     t.index ["trading212_item_id"], name: "index_trading212_accounts_on_trading212_item_id"
+    t.check_constraint "kind::text = ANY (ARRAY['combined'::character varying, 'cash'::character varying, 'portfolio'::character varying]::text[])", name: "trading212_accounts_kind"
   end
 
   create_table "trading212_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -2726,6 +2735,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
     t.datetime "updated_at", null: false
     t.index ["family_id"], name: "index_trading212_items_on_family_id"
     t.index ["status"], name: "index_trading212_items_on_status"
+  end
+
+  create_table "trading212_statements", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "checksum", null: false
+    t.date "coverage_end"
+    t.date "coverage_start"
+    t.datetime "created_at", null: false
+    t.jsonb "result", default: {}, null: false
+    t.jsonb "rows", default: [], null: false
+    t.string "status", default: "preview", null: false
+    t.uuid "trading212_account_id", null: false
+    t.datetime "updated_at", null: false
+    t.uuid "user_id", null: false
+    t.index ["trading212_account_id", "checksum"], name: "index_trading212_statements_on_account_checksum", unique: true
+    t.index ["trading212_account_id"], name: "index_trading212_statements_on_trading212_account_id"
+    t.index ["user_id"], name: "index_trading212_statements_on_user_id"
   end
 
   create_table "transactions", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -3094,6 +3119,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_29_120000) do
   add_foreign_key "trades", "securities"
   add_foreign_key "trading212_accounts", "trading212_items"
   add_foreign_key "trading212_items", "families"
+  add_foreign_key "trading212_statements", "trading212_accounts"
+  add_foreign_key "trading212_statements", "users"
   add_foreign_key "transactions", "categories", on_delete: :nullify
   add_foreign_key "transactions", "merchants"
   add_foreign_key "transactions", "transfers"

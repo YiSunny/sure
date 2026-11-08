@@ -112,6 +112,7 @@ class ReportsController < ApplicationController
 
       # Get aggregated data
       @income_statement = Current.family.income_statement(user: Current.user)
+      @unresolved_trading212_count = @income_statement.unresolved_trading212_count(date_range: @period.date_range)
       @current_income_totals = @income_statement.income_totals(period: @period)
       @current_expense_totals = @income_statement.expense_totals(period: @period)
 
@@ -365,6 +366,7 @@ class ReportsController < ApplicationController
         .merge(Account.included_in_reports)
         .where(entries: { entryable_type: "Transaction", excluded: false, date: @period.date_range })
         .where.not(kind: Transaction::BUDGET_EXCLUDED_KINDS)
+        .classified_for_reporting
         .includes(entry: :account, category: :parent)
       transactions = exclude_tax_advantaged_accounts(transactions)
 
@@ -739,6 +741,7 @@ class ReportsController < ApplicationController
         .merge(Account.included_in_reports)
         .where(entries: { entryable_type: "Transaction", excluded: false, date: @period.date_range })
         .where.not(kind: Transaction::BUDGET_EXCLUDED_KINDS)
+        .classified_for_reporting
         .includes(entry: :account, category: [])
       transactions = exclude_tax_advantaged_accounts(transactions)
 
@@ -778,6 +781,7 @@ class ReportsController < ApplicationController
         .merge(Account.included_in_reports)
         .where(entries: { entryable_type: "Transaction", excluded: false, date: @period.date_range })
         .where.not(kind: Transaction::BUDGET_EXCLUDED_KINDS)
+        .classified_for_reporting
         .includes(entry: :account, category: [])
       transactions = exclude_tax_advantaged_accounts(transactions)
 

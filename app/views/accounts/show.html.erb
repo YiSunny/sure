@@ -1,3 +1,10 @@
+<% if @trading212_coverage %>
+  <%= render DS::Alert.new(message: t("trading212_split.account_coverage", start: @trading212_coverage[:first] || t("trading212_split.none"), end: @trading212_coverage[:last] || t("trading212_split.none"), count: @trading212_coverage[:unclassified]), variant: :warning) %>
+<% end %>
+<% if @trading212_diagnostics %>
+  <%= render DS::Alert.new(message: trading212_diagnostics_message(@trading212_diagnostics), variant: :warning) %>
+<% end %>
+
 <%= render UI::AccountPage.new(
       account: @account,
       chart_view: @chart_view,

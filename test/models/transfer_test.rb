@@ -141,6 +141,13 @@ class TransferTest < ActiveSupport::TestCase
     assert_equal "investment_contribution", Transfer.kind_for_account(accounts(:investment))
   end
 
+  test "kind_for_account returns funds_movement for a Trading 212 account" do
+    account = accounts(:investment)
+    trading212_accounts(:main_account).ensure_account_provider!(account)
+
+    assert_equal "funds_movement", Transfer.kind_for_account(account.reload)
+  end
+
   test "kind_for_account returns investment_contribution for crypto accounts" do
     assert_equal "investment_contribution", Transfer.kind_for_account(accounts(:crypto))
   end

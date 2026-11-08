@@ -58,7 +58,7 @@ module IncomeStatement::ScopedTransactionsQuery
     end
 
     def pending_providers_sql(t = "t")
-      Transaction.pending_providers_sql(t)
+      "#{Transaction.pending_providers_sql(t)}\n#{Transaction.classified_for_reporting_sql(t)}"
     end
 
     # Tax-advantaged accounts (401k, IRA, HSA, etc.) are retirement savings,

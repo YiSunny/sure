@@ -5,7 +5,7 @@ class Provider::Trading212Adapter < Provider::Base
   Provider::Factory.register("Trading212Account", self)
 
   def self.supported_account_types
-    %w[Investment]
+    %w[Investment Depository]
   end
 
   def self.connection_configs(family:)

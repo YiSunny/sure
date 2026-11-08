@@ -30,6 +30,9 @@
 <% end %>
 
 <%= turbo_frame_tag "dashboard_sections", target: "_top" do %>
+  <% if @unresolved_trading212_count.to_i.positive? %>
+    <%= render DS::Alert.new(message: t("trading212_split.provisional_reports", count: @unresolved_trading212_count), variant: :warning) %>
+  <% end %>
   <% if accessible_accounts.any? %>
     <div class="flex items-center justify-end mb-4">
       <%= render UI::PeriodPicker.new(selected: @period, url: root_path, frame: "dashboard_sections") %>

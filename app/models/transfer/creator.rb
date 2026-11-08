@@ -248,15 +248,11 @@ class Transfer::Creator
         "loan_payment"
       elsif destination_account.liability?
         "cc_payment"
-      elsif destination_is_investment? && !source_is_investment?
+      elsif destination_account.receives_investment_contributions? && !source_is_investment?
         "investment_contribution"
       else
         "funds_movement"
       end
-    end
-
-    def destination_is_investment?
-      destination_account.investment? || destination_account.crypto?
     end
 
     def source_is_investment?

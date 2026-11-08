@@ -19,7 +19,7 @@ class Balance::ReverseCalculator < Balance::BaseCalculator
         flows = flows_for_date(date)
         valuation = sync_cache.get_valuation(date)
         cash_adjustments = 0
-        non_cash_adjustments = 0
+        non_cash_adjustments = account.balance_type == :investment ? provider_snapshot_adjustment(date) : 0
 
         if use_opening_anchor_for_date?(date)
           end_cash_balance = derive_cash_balance_on_date_from_total(

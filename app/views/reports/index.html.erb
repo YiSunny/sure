@@ -1,4 +1,7 @@
 <% content_for :page_header do %>
+  <% if @unresolved_trading212_count.to_i.positive? %>
+    <%= render DS::Alert.new(message: t("trading212_split.provisional_reports", count: @unresolved_trading212_count), variant: :warning) %>
+  <% end %>
   <div class="space-y-4 mb-6">
     <header class="flex justify-between items-center text-primary font-medium gap-4">
       <div class="space-y-1">

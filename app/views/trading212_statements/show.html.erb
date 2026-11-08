@@ -1,0 +1,29 @@
+<div class="space-y-4">
+  <h1 class="text-primary text-xl font-medium"><%= t("trading212_split.statement_title") %></h1>
+  <%= render DS::Alert.new(message: t("trading212_split.coverage", start: @summary[:coverage_start], end: @summary[:coverage_end])) %>
+  <%= render DS::Table.new(rows: @summary[:matched], label: t("trading212_split.matched"), sticky_header: true) do |table| %>
+    <% table.with_column(t("trading212_split.action")) { |row| row["action"] } %>
+    <% table.with_column(t("trading212_split.name")) { |row| row["name"] } %>
+    <% table.with_column(t("trading212_split.amount"), numeric: true) { |row| trading212_cash_flow(row) } %>
+    <% table.with_column(t("trading212_split.category")) { |row| row["category"].presence || t("trading212_split.category_review") } %>
+    <% table.with_column(t("trading212_split.purchase_date")) { |row| row["purchase_timestamp"].to_s[0, 10] } %>
+    <% table.with_column(t("trading212_split.posted_date")) { |row| row["posted_timestamp"].to_s[0, 10] } %>
+    <% table.with_column(t("trading212_split.state")) { |row| row["state"] } %>
+  <% end %>
+  <% if @summary[:conflicts].any? %>
+    <%= render DS::Table.new(rows: @summary[:conflicts], label: t("trading212_split.conflicts")) do |table| %>
+      <% table.with_column(t("trading212_split.row")) { |row| row[:row].to_s } %>
+      <% table.with_column(t("trading212_split.reason")) { |row| row[:reason] } %>
+    <% end %>
+  <% end %>
+  <p class="text-secondary"><%= t("trading212_split.skipped", count: @summary[:skipped].size) %></p>
+  <% unless @statement.applied? %>
+    <%= form_with url: apply_trading212_statement_path(@statement, trading212_account_id: @provider_account.id), method: :post do %>
+      <%= render DS::Button.new(text: t("trading212_split.apply"), type: "submit", disabled: @summary[:conflicts].any? || @summary[:matched].empty?) %>
+    <% end %>
+  <% else %>
+    <%= form_with url: revert_trading212_statement_path(@statement, trading212_account_id: @provider_account.id), method: :post do %>
+      <%= render DS::Button.new(text: t("trading212_split.revert"), type: "submit", variant: :outline) %>
+    <% end %>
+  <% end %>
+</div>

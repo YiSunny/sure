@@ -547,6 +547,20 @@ class Family::AutoTransferMatchableTest < ActiveSupport::TestCase
     assert_equal category, outflow_entry.entryable.category
   end
 
+  test "auto-matched top-up of a Trading 212 account is a funds movement without contribution category" do
+    investment = accounts(:investment)
+    trading212_accounts(:main_account).ensure_account_provider!(investment)
+    outflow_entry = create_transaction(date: Date.current, account: @depository, amount: 500)
+    create_transaction(date: Date.current, account: investment, amount: -500)
+
+    @family.auto_match_transfers!
+
+    outflow = outflow_entry.reload.entryable
+    assert outflow.transfer.present?
+    assert_equal "funds_movement", outflow.kind
+    assert_nil outflow.category
+  end
+
   test "auto-matched investment transfers reuse contribution category lookup" do
     investment = accounts(:investment)
     category = @family.investment_contributions_category

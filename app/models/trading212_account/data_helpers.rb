@@ -39,6 +39,12 @@ module Trading212Account::DataHelpers
       t212_ticker.to_s.split("_").first&.upcase || ""
     end
 
+    def normalize_minor_units(currency_code, *amounts)
+      return [ currency_code, *amounts ] unless currency_code.to_s.upcase == "GBX" || currency_code.to_s == "GBp"
+
+      [ "GBP", *amounts.map { |amount| amount && amount * BigDecimal("0.01") } ]
+    end
+
     def resolve_security_for_ticker(t212_ticker)
       instrument = instruments_map[t212_ticker]
 

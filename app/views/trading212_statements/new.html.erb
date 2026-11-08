@@ -1,0 +1,12 @@
+<div class="space-y-4">
+  <h1 class="text-primary text-xl font-medium"><%= t("trading212_split.statement_title") %></h1>
+  <%= render DS::Pill.new(label: t("trading212_split.preview")) %>
+  <%= render DS::Alert.new(message: t("trading212_split.statement_help")) %>
+  <p class="text-secondary"><%= @provider_account.current_account.name %></p>
+  <%= form_with url: trading212_statements_path, multipart: true, class: "space-y-4" do |form| %>
+    <%= form.hidden_field :trading212_account_id, value: @provider_account.id %>
+    <%= form.label :file, t("trading212_split.csv_file"), class: "text-primary" %>
+    <%= form.file_field :file, accept: ".csv,text/csv", required: true %>
+    <%= render DS::Button.new(text: t("trading212_split.preview"), type: "submit") %>
+  <% end %>
+</div>

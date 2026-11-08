@@ -46,7 +46,21 @@ class Trading212Item < ApplicationRecord
   def process_accounts
     return [] if trading212_accounts.empty?
 
-    linked_trading212_accounts.includes(account_provider: :account).each_with_object([]) do |t212_account, results|
+    if trading212_accounts.where(kind: [ "cash", "portfolio" ]).exists?
+      return with_lock do
+        split_accounts = linked_trading212_accounts.includes(account_provider: :account).to_a
+        active = split_accounts.select(&:usable_account)
+        unless active.empty? || active.map(&:kind).sort == %w[cash portfolio]
+          raise Trading212Account::Snapshot::Invalid, "Cash and portfolio must both be linked and active"
+        end
+        active.sort_by { |provider| provider.cash? ? 1 : 0 }.map do |provider|
+          result = Trading212Account::Processor.new(provider).process
+          { trading212_account_id: provider.id, success: true, result: result }
+        end
+      end
+    end
+
+    results = linked_trading212_accounts.includes(account_provider: :account).each_with_object([]) do |t212_account, results|
       account = t212_account.current_account
       next unless account
       next if account.pending_deletion? || account.disabled?
@@ -67,6 +81,7 @@ class Trading212Item < ApplicationRecord
         results << { trading212_account_id: t212_account.id, success: false, error: e.message }
       end
     end
+    results
   end
 
   def schedule_account_syncs(parent_sync: nil, window_start_date: nil, window_end_date: nil)

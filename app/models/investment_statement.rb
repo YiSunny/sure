@@ -342,12 +342,12 @@ class InvestmentStatement
           # accounts yields two rows; a negative row in one would otherwise net
           # against the good row in the other and understate the position.
           positive_holdings = holdings.select do |holding|
-            convert_to_family_currency(holding.amount, holding.currency).positive?
+            convert_to_family_currency(holding.value_money.amount, holding.value_money.currency.iso_code).positive?
           end
           next if positive_holdings.empty?
 
           security = positive_holdings.first.security
-          value = positive_holdings.sum { |h| convert_to_family_currency(h.amount, h.currency) }
+          value = positive_holdings.sum { |h| convert_to_family_currency(h.value_money.amount, h.value_money.currency.iso_code) }
 
           # positive_holdings, not holdings, so the trend excludes the bad row too.
           [ security, value, positive_holdings ]
@@ -379,6 +379,27 @@ class InvestmentStatement
       @investment_account_ids ||= investment_accounts.pluck(:id)
     end
 
+    # Attribute broker income without moving or duplicating the actual Cash
+    # transaction. Both siblings must be visible/included for this viewer.
+    # Free-cash interest stays cash income; securities-lending interest belongs
+    # to Investments. The income report is an attribution, not another entry.
+    def investment_income_account_ids
+      return @investment_income_account_ids if defined?(@investment_income_account_ids)
+
+      visible_ids = family.accounts.visible.included_in_reports
+      visible_ids = visible_ids.included_in_finances_for(user) if user
+      portfolio_providers = Trading212Account.portfolio.joins(:account_provider)
+        .where(account_providers: { account_id: investment_account_ids })
+      cash_ids = Trading212Account.cash.joins(:account_provider)
+        .joins(<<~SQL)
+          JOIN trading212_accounts portfolios ON portfolios.trading212_item_id = trading212_accounts.trading212_item_id
+            AND portfolios.trading212_account_id = trading212_accounts.trading212_account_id AND portfolios.kind = 'portfolio'
+        SQL
+        .where("portfolios.id IN (?)", portfolio_providers.select(:id))
+        .where(account_providers: { account_id: visible_ids.select(:id) }).pluck("account_providers.account_id")
+      @investment_income_account_ids = investment_account_ids | cash_ids
+    end
+
     def totals_query(account_ids:, date_range:)
       if account_ids.empty?
         return Totals.new(family, account_ids: account_ids, date_range: date_range).call
@@ -387,9 +408,10 @@ class InvestmentStatement
       account_ids_hash = Digest::MD5.hexdigest(account_ids.sort.join(","))
 
       Rails.cache.fetch([
-        "investment_statement", "totals_query", family.id, user&.id,
-        account_ids_hash, date_range.begin, date_range.end, family.entries_cache_version
-      ]) { Totals.new(family, account_ids: account_ids, date_range: date_range).call }
+        "investment_statement", "totals_query", "v2", family.id, user&.id,
+        account_ids_hash, investment_income_account_ids.sort, date_range.begin, date_range.end, family.entries_cache_version,
+        family.currency, ExchangeRate.maximum(:updated_at), family.accounts.maximum(:updated_at)
+      ]) { Totals.new(family, account_ids: account_ids, date_range: date_range, income_account_ids: investment_income_account_ids).call }
     end
 
     def monetizable_currency

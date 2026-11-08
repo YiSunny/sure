@@ -1,0 +1,18 @@
+<div class="space-y-4">
+  <h1 class="text-primary text-xl font-medium"><%= t("trading212_split.title") %></h1>
+  <%= render DS::Pill.new(label: t("trading212_split.preview")) %>
+  <%= render DS::Alert.new(message: t("trading212_split.warning"), variant: :warning) %>
+  <%= render DS::Alert.new(message: t("trading212_split.cash_breakdown")) %>
+  <% if @error %>
+    <%= render DS::Alert.new(message: @error, variant: :error) %>
+  <% elsif @summary %>
+    <p class="text-primary"><%= trading212_split_summary(@summary) %></p>
+    <% if @summary[:stale] %>
+      <%= render DS::Alert.new(message: t("trading212_split.stale_split"), variant: :warning) %>
+    <% end %>
+    <%= form_with url: trading212_splits_path, method: :post do |form| %>
+      <%= form.hidden_field :id, value: @provider_account.id %>
+      <%= render DS::Button.new(text: t("trading212_split.confirm"), type: "submit", disabled: @summary[:stale] || @summary[:transfers_to_review].positive?) %>
+    <% end %>
+  <% end %>
+</div>

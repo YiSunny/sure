@@ -18,10 +18,17 @@ class Trading212DataHelpersTest < ActiveSupport::TestCase
     def test_resolve_security_for_ticker(v) = resolve_security_for_ticker(v)
     def test_resolve_security_direct(isin, ticker, name) = resolve_security_direct(isin, ticker, name)
     def test_instrument_currency(v)    = instrument_currency(v)
+    def test_normalize_minor_units(code, amount) = normalize_minor_units(code, amount)
   end
 
   setup do
     @helper = TestHelper.new
+  end
+
+  test "pence codes normalize without treating pounds as pence" do
+    assert_equal [ "GBP", 1.to_d ], @helper.test_normalize_minor_units("GBp", 100.to_d)
+    assert_equal [ "GBP", 1.to_d ], @helper.test_normalize_minor_units("GBX", 100.to_d)
+    assert_equal [ "GBP", 100.to_d ], @helper.test_normalize_minor_units("GBP", 100.to_d)
   end
 
   # === parse_decimal ===

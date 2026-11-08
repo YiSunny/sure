@@ -44,6 +44,30 @@ class Trading212ItemImporterTest < ActiveSupport::TestCase
     assert account.raw_transactions_payload.present?
   end
 
+  test "authoritative summary currency is used for new discoveries" do
+    provider = stub(fetch_instruments: [], fetch_account_summary: { "id" => "new-eur", "currency" => "EUR", "totalValue" => 100 },
+      fetch_positions: [], fetch_all_orders: [], fetch_all_dividends: [], fetch_all_transactions: [])
+    Trading212Item::Importer.new(@item, provider: provider).import
+    assert_equal "EUR", @item.trading212_accounts.find_by!(trading212_account_id: "new-eur").currency
+  end
+
+  test "currency mismatch preserves established accounts protected entries and cached data" do
+    established = trading212_accounts(:main_account)
+    account = @family.accounts.create!(name: "Established", currency: "USD", balance: 100, accountable: Investment.new)
+    established.ensure_account_provider!(account)
+    entry = account.entries.create!(name: "Protected", date: Date.current, amount: -100, currency: "USD",
+      import_locked: true, entryable: Transaction.new)
+    before = established.attributes
+    provider = mock("mismatched provider")
+    provider.expects(:fetch_instruments).returns([])
+    provider.expects(:fetch_account_summary).returns({ "id" => established.trading212_account_id, "currency" => "EUR", "totalValue" => 120 })
+    provider.expects(:fetch_positions).never
+    assert_raises(Trading212Account::Snapshot::Invalid) { Trading212Item::Importer.new(@item, provider: provider).import }
+    assert_equal before, established.reload.attributes
+    assert_equal "USD", account.reload.currency
+    assert_equal "USD", entry.reload.currency
+  end
+
   test "import updates existing account on subsequent sync" do
     existing = @item.trading212_accounts.create!(
       name: "Existing Account",
@@ -117,5 +141,27 @@ class Trading212ItemImporterTest < ActiveSupport::TestCase
     # Should not raise
     result = Trading212Item::Importer.new(@item, provider: provider).import
     assert_equal({ success: true }, result)
+  end
+
+  test "split sync refreshes both siblings without creating another combined account" do
+    portfolio = @item.trading212_accounts.create!(kind: "portfolio", name: "My Portfolio", currency: "EUR", trading212_account_id: "split")
+    cash = @item.trading212_accounts.create!(kind: "cash", name: "My Cash", currency: "EUR", trading212_account_id: "split")
+    summary = { "id" => "split", "currency" => "EUR", "totalValue" => "10559.46",
+      "cash" => { "availableToTrade" => "45.58", "inPies" => "0.48", "reservedForOrders" => 0 },
+      "investments" => { "currentValue" => "10471.54" } }
+    provider = mock("provider")
+    provider.expects(:fetch_instruments).returns([])
+    provider.expects(:fetch_account_summary).returns(summary)
+    provider.expects(:fetch_positions).returns([ { "walletImpact" => { "currency" => "EUR", "currentValue" => "10471.08" } } ])
+    provider.expects(:fetch_all_orders).returns([])
+    provider.expects(:fetch_all_dividends).returns([])
+    provider.expects(:fetch_all_transactions).returns([])
+    assert_no_difference "Trading212Account.count" do
+      Trading212Item::Importer.new(@item, provider: provider).import
+    end
+    assert_equal "My Portfolio", portfolio.reload.name
+    assert_equal "87.92".to_d, cash.reload.account_balance
+    assert_equal summary, cash.raw_summary_payload
+    assert_equal "10471.54".to_d, portfolio.account_balance
   end
 end

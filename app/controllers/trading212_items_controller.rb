@@ -98,11 +98,11 @@ class Trading212ItemsController < ApplicationController
   end
 
   def select_existing_account
-    @account = Current.family.accounts.find(params[:account_id])
+    @account = Current.family.accounts.writable_by(Current.user).find(params[:account_id])
     @available_trading212_accounts = Current.family.trading212_items
       .includes(trading212_accounts: { account_provider: :account })
       .flat_map(&:trading212_accounts)
-      .select { |t212_account| t212_account.account_provider.nil? }
+      .select { |t212_account| t212_account.account_provider.nil? && t212_account.linkable_to?(@account) }
       .sort_by { |t212_account| t212_account.updated_at || t212_account.created_at }
       .reverse
 
@@ -110,7 +110,7 @@ class Trading212ItemsController < ApplicationController
   end
 
   def link_existing_account
-    account = Current.family.accounts.find_by(id: params[:account_id])
+    account = Current.family.accounts.writable_by(Current.user).find_by(id: params[:account_id])
     t212_account = Current.family.trading212_items
       .joins(:trading212_accounts)
       .where(trading212_accounts: { id: params[:trading212_account_id] })
@@ -123,8 +123,8 @@ class Trading212ItemsController < ApplicationController
       return
     end
 
-    if account.accountable_type != "Investment" || account.account_providers.any? || account.plaid_account_id.present? || account.simplefin_account_id.present?
-      redirect_to account_path(account), alert: t(".only_manual_investment")
+    if !t212_account.linkable_to?(account) || account.account_providers.any? || account.plaid_account_id.present? || account.simplefin_account_id.present?
+      redirect_to account_path(account), alert: t("trading212_split.incompatible_link")
       return
     end
 
@@ -182,8 +182,9 @@ class Trading212ItemsController < ApplicationController
     end
 
     @linkable_accounts = Current.family.accounts
+      .writable_by(Current.user)
       .visible
-      .where(accountable_type: "Investment")
+      .where(accountable_type: [ "Investment", "Depository" ])
       .left_joins(:account_providers)
       .where(account_providers: { id: nil })
       .order(:name)
