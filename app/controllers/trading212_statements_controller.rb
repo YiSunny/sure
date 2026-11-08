@@ -47,7 +47,7 @@ class Trading212StatementsController < ApplicationController
   private
 
     def set_provider_account
-      @provider_account = Trading212Account.cash.joins(:trading212_item)
+      @provider_account = Trading212Account.where(kind: %w[combined cash]).joins(:trading212_item)
         .where(trading212_items: { family_id: Current.family.id }).find(params[:trading212_account_id])
       account = @provider_account.current_account
       raise ActiveRecord::RecordNotFound unless account && Current.family.accounts.writable_by(Current.user).exists?(id: account.id)

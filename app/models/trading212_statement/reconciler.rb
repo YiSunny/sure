@@ -11,7 +11,7 @@ class Trading212Statement::Reconciler
   end
 
   def preview
-    raise ArgumentError, "Statement enrichment requires a split Cash account" unless @provider_account.cash?
+    raise ArgumentError, "Statement enrichment requires a combined or Cash account" unless @provider_account.combined? || @provider_account.cash?
     matched = []
     conflicts = []
     skipped = []

@@ -51,9 +51,9 @@ namespace :trading212 do
       cash_account_id: cash.current_account.id, synchronization_started: false)
   end
 
-  desc "Preview a history CSV against a split Cash account without applying entries"
+  desc "Preview a history CSV against a combined or Cash account without applying entries"
   task statement_preview: :environment do
-    provider = Trading212Account.cash.find(ENV.fetch("PROVIDER_ACCOUNT_ID"))
+    provider = Trading212Account.where(kind: %w[combined cash]).find(ENV.fetch("PROVIDER_ACCOUNT_ID"))
     user = User.find(ENV.fetch("ACTOR_ID"))
     content = File.binread(ENV.fetch("CSV_PATH"), Import::MAX_CSV_SIZE + 1)
     statement = provider.trading212_statements.new(user: user,

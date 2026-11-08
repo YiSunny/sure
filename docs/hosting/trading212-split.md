@@ -77,8 +77,22 @@ conflicts and does not activate accounts. `trading212:statement_preview` accepts
 the split Cash provider ID, actor ID and `CSV_PATH` and prints aggregate counts
 only, without persisting a statement or exposing merchant details.
 
-Use **Enrich Trading 212 cash from history CSV** on the selected connection's
-Cash account. Upload the original export, inspect the preview, then apply it.
+CSV enrichment also works without splitting. Enable preview features in
+Settings → Preferences, open the combined Trading 212 account, and select
+**Enrich Trading 212 cash from history CSV**. The same link is available on
+the connection card and on a split Cash account. Upload the original export,
+inspect the preview, then apply it. Portfolio-only accounts cannot accept a CSV.
+The `trading212:statement_preview` task accepts either a combined or Cash
+provider account ID.
+
+On a combined account the CSV enriches the existing API entries in place;
+it does not create accounts, import additional trades, or change balances.
+Purchases become ordinary expenses with merchant details, cashback/refunds
+become credits, and confirmed funding remains budget-neutral. Later provider
+syncs reuse the classifications. Activity outside the export stays unchanged:
+older generic withdrawals may still include bank transfers counted as expenses.
+Upload the older exports separately to classify those periods; do not infer
+their nature from their amount.
 
 - No CSV trades/dividends are independently inserted. These remain API-owned.
 - Cash rows match only the selected account's exact `ID`/API `reference`, amount,

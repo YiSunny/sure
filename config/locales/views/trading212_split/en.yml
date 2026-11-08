@@ -21,7 +21,7 @@ en:
     cashback_allocation: Cashback allocated to Pie
     unresolved_settlement: Trade funding is unresolved. Trading 212 does not identify Main versus Pie funding in this history. Review the allocation before syncing; no Cash movement has been guessed.
     statement_title: Enrich Trading 212 cash from history CSV
-    statement_help: Upload the original Trading 212 history export. Cash rows match only by reference in this account. Trades remain API-owned. Posted dates and amounts are preserved. Missing history is not assumed to be zero.
+    statement_help: Upload the original Trading 212 history export for this account. No Cash/Portfolio split is needed. Cash rows match only by exact reference, amount and currency. Trades remain API-owned. Posted dates and amounts are preserved. Activity outside the export remains unchanged; older withdrawals may still include transfers counted as expenses.
     csv_file: History CSV
     statement_applied: Statement classifications saved. Existing rows were enriched; matched future rows will use these classifications on the next sync.
     coverage: "Matched export activity: %{start} to %{end}. This does not prove complete history outside or within this range."

@@ -4,6 +4,9 @@
 <% if @trading212_diagnostics %>
   <%= render DS::Alert.new(message: trading212_diagnostics_message(@trading212_diagnostics), variant: :warning) %>
 <% end %>
+<% if preview_features_enabled? && @trading212_statement_provider %>
+  <%= render DS::Link.new(text: t("trading212_split.statement_title"), href: new_trading212_statement_path(trading212_account_id: @trading212_statement_provider.id)) %>
+<% end %>
 
 <%= render UI::AccountPage.new(
       account: @account,

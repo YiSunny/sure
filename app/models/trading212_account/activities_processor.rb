@@ -184,7 +184,10 @@ class Trading212Account::ActivitiesProcessor
         return false
       end
 
-      return process_split_cash(transaction, signed_amount) if @trading212_account.cash?
+      statement = (@trading212_account.statement_enrichments || {})[reference]
+      if @trading212_account.cash? || statement
+        return process_classified_cash(transaction, signed_amount)
+      end
 
       date = parse_date(transaction[:dateTime]) || Date.current
       deposit = type == DEPOSIT_TYPE
@@ -255,7 +258,7 @@ class Trading212Account::ActivitiesProcessor
       [ gross_value, (net_value / gross_value).to_f ]
     end
 
-    def process_split_cash(transaction, signed_amount)
+    def process_classified_cash(transaction, signed_amount)
       reference = transaction[:reference].to_s
       statement = (@trading212_account.statement_enrichments || {})[reference]
       type = transaction[:type].to_s.upcase
@@ -292,7 +295,13 @@ class Trading212Account::ActivitiesProcessor
         extra: { trading212: { reference: reference, type: type, amount: transaction[:amount],
           classification_pending: classification_pending }, trading212_statement: statement }.compact
       )
-      Trading212Account::CashbackAllocation.new(@trading212_account).process(entry)
+      # A legacy combined row can still carry Withdrawal/Contribution. The
+      # adapter only fills blank labels, so explicitly apply the reviewed CSV
+      # label while preserving user locks and Rule assignments.
+      if statement && entry && !entry.protected_from_sync? && !rule_assigned?(entry.transaction, :investment_activity_label)
+        entry.transaction.enrich_attribute(:investment_activity_label, label, source: "trading212")
+      end
+      Trading212Account::CashbackAllocation.new(@trading212_account).process(entry) if @trading212_account.cash?
       true
     end
 

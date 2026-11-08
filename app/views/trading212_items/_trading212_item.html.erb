@@ -95,7 +95,8 @@
             <% if provider_account.current_account && writable_account_ids.include?(provider_account.current_account.id) %>
               <% if provider_account.combined? %>
                 <%= render DS::Link.new(text: t("trading212_split.title"), href: trading212_split_path(provider_account)) %>
-              <% elsif provider_account.cash? %>
+              <% end %>
+              <% if provider_account.combined? || provider_account.cash? %>
                 <%= render DS::Link.new(text: t("trading212_split.statement_title"), href: new_trading212_statement_path(trading212_account_id: provider_account.id)) %>
               <% end %>
             <% end %>

@@ -43,4 +43,22 @@ class Trading212WorkflowTest < ApplicationSystemTestCase
     assert @provider.portfolio?
     assert_equal "Depository", cash_provider.current_account.accountable_type
   end
+
+  test "owner can upload a CSV on a combined account without splitting" do
+    visit account_path(@account)
+    click_link "Enrich Trading 212 cash from history CSV"
+    assert_text "No Cash/Portfolio split is needed"
+    Tempfile.create([ "trading212-combined", ".csv" ]) do |file|
+      file.write("Action,Time (UTC),ID,Gross Total,Currency (Gross Total)\nSpending cashback,2026-06-01 01:00:00+00:00,cashback,1,USD\n")
+      file.flush
+      attach_file "History CSV", file.path
+      click_button "Preview"
+      assert_text "Spending cashback"
+      click_button "Apply reviewed classifications"
+      assert_current_path account_path(@account)
+      assert_text "Trading 212 CSV coverage"
+    end
+    assert @provider.reload.combined?
+    assert_equal "Spending cashback", @provider.statement_enrichments.fetch("cashback").fetch("action")
+  end
 end

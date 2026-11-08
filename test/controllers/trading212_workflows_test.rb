@@ -111,4 +111,51 @@ class Trading212WorkflowsTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "form[action=?]", revert_trading212_statement_path(statement, trading212_account_id: cash_provider.id)
   end
+
+  test "combined account owner can upload preview apply and revert without splitting" do
+    @provider.update!(raw_transactions_payload: [
+      { "reference" => "purchase", "type" => "WITHDRAW", "amount" => -12, "currency" => "USD", "dateTime" => "2026-06-01T01:00:00Z" }
+    ])
+    Trading212Account::ActivitiesProcessor.new(@provider).process
+    csv = "Action,Time (UTC),ID,Gross Total,Currency (Gross Total),Merchant name\nCard debit,2026-06-01 00:00:00+00:00,purchase,-12,USD,Example Shop\n"
+    get account_path(@account)
+    assert_select "a[href=?]", new_trading212_statement_path(trading212_account_id: @provider.id)
+    assert_no_difference [ "Account.count", "Entry.count" ] do
+      post trading212_statements_path, params: { trading212_account_id: @provider.id,
+        file: uploaded_file(filename: "history.csv", content_type: "text/csv", content: csv) }
+      follow_redirect!
+      assert_response :success
+      assert_select "td", text: "Example Shop"
+      statement = @provider.trading212_statements.sole
+      post apply_trading212_statement_path(statement), params: { trading212_account_id: @provider.id }
+      assert_redirected_to account_path(@account)
+      assert_equal "Example Shop", @account.entries.sole.name
+      post revert_trading212_statement_path(statement), params: { trading212_account_id: @provider.id }
+      assert statement.reload.preview?
+    end
+    assert @provider.reload.combined?
+  end
+
+  test "combined account upload rejects other owners foreign families and disabled preview features" do
+    other = @user.family.users.where.not(id: @user.id).first
+    @account.update!(owner: other)
+    @account.account_shares.find_or_create_by!(user: @user).update!(permission: "read_write", include_in_finances: true)
+    get new_trading212_statement_path(trading212_account_id: @provider.id)
+    assert_response :not_found
+
+    foreign = trading212_accounts(:pending_setup_account)
+    foreign.trading212_item.update!(family_id: families(:empty).id)
+    get new_trading212_statement_path(trading212_account_id: foreign.id)
+    assert_response :not_found
+
+    @account.update!(owner: @user)
+    @user.update!(preferences: @user.preferences.merge("preview_features_enabled" => false))
+    get new_trading212_statement_path(trading212_account_id: @provider.id)
+    assert_redirected_to root_path
+    assert_no_difference "Trading212Statement.count" do
+      post trading212_statements_path, params: { trading212_account_id: @provider.id,
+        file: uploaded_file(filename: "history.csv", content_type: "text/csv") }
+    end
+    assert_redirected_to root_path
+  end
 end

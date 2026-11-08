@@ -82,6 +82,10 @@ class AccountsController < ApplicationController
 
   def show
     @trading212_provider = @account.account_providers.where(provider_type: "Trading212Account").includes(:provider).first&.provider
+    if @trading212_provider && !@trading212_provider.portfolio? && Current.family.accounts.writable_by(Current.user).exists?(id: @account.id)
+      @trading212_statement_provider = @trading212_provider
+      @trading212_coverage = @trading212_provider.statement_coverage if @trading212_provider.trading212_statements.applied.exists?
+    end
     if @trading212_provider && !@trading212_provider.combined?
       @trading212_diagnostics = @trading212_provider.accounting_diagnostics
       @trading212_coverage = @trading212_provider.statement_coverage if @trading212_provider.cash?

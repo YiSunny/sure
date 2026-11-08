@@ -53,6 +53,71 @@ class Trading212StatementTest < ActiveSupport::TestCase
     assert statement.preview_result[:conflicts].any? { |r| r[:reason] == "duplicate_reference" }
   end
 
+  test "combined account CSV enriches legacy withdrawals and cashback without splitting or duplicating on sync" do
+    @portfolio.update!(kind: "combined", currency: "EUR")
+    account = @family.accounts.create!(name: "Combined broker", currency: "EUR", balance: 100,
+      owner: @user, accountable: Investment.new)
+    @portfolio.ensure_account_provider!(account)
+    Trading212Account::ActivitiesProcessor.new(@portfolio.reload).process
+    purchase = account.entries.find_by!(external_id: "trading212_transaction_purchase")
+    reward = account.entries.find_by!(external_id: "trading212_transaction_reward")
+    assert_equal "Withdrawal", purchase.transaction.investment_activity_label
+    assert_equal "funds_movement", reward.transaction.kind
+    before = account.entries.order(:id).pluck(:id, :date, :amount, :currency)
+    statement = @portfolio.trading212_statements.create!(user: @user, checksum: "combined-file",
+      rows: Trading212Statement::Parser.new(csv).parse)
+
+    assert_empty statement.preview_result[:conflicts]
+    assert_no_difference [ "Account.count", "Entry.count", "Trade.count" ] do
+      statement.apply!(actor: @user)
+      2.times { Trading212Account::ActivitiesProcessor.new(@portfolio.reload).process }
+    end
+
+    assert_equal before, account.entries.order(:id).pluck(:id, :date, :amount, :currency)
+    assert @portfolio.reload.combined?
+    assert_equal "Example Mobility", purchase.reload.name
+    assert_equal "standard", purchase.transaction.kind
+    assert_nil purchase.transaction.investment_activity_label
+    assert_equal "Transportation", purchase.transaction.category.name
+    assert_equal "Example Mobility", purchase.transaction.merchant.name
+    assert_equal "standard", reward.reload.transaction.kind
+    assert_equal "Cashback", reward.transaction.category.name
+    assert_equal "Spending cashback", reward.transaction.extra.dig("trading212_statement", "action")
+
+    rows = IncomeStatement::Totals.new(@family, transactions_scope: account.transactions,
+      date_range: Date.new(2026, 6, 1)..Date.new(2026, 6, 30), included_account_ids: [ account.id ]).call
+    assert_equal "20.28".to_d, rows.select { |row| row.classification == "expense" }.sum(&:total)
+    assert_equal "0.30".to_d, rows.select { |row| row.classification == "income" }.sum(&:total)
+
+    bank = @family.accounts.create!(name: "Bank", currency: "EUR", balance: 0, owner: @user, accountable: Depository.new)
+    bank.entries.create!(name: "Unrelated", amount: "-20.28", currency: "EUR", date: purchase.date, entryable: Transaction.new)
+    @family.auto_match_transfers!
+    assert_nil purchase.reload.transaction.transfer
+    statement.revert!(actor: @user)
+    assert_equal "Withdrawal", purchase.reload.transaction.investment_activity_label
+    assert_equal "funds_movement", reward.reload.transaction.kind
+  end
+
+  test "combined funding withdrawals stay budget neutral after subsequent syncs" do
+    @portfolio.update!(kind: "combined", currency: "EUR", raw_transactions_payload: [
+      { "reference" => "bank-out", "type" => "WITHDRAW", "amount" => "-500", "currency" => "EUR", "dateTime" => "2026-06-01T00:00:00Z" }
+    ])
+    account = @family.accounts.create!(name: "Combined", currency: "EUR", balance: 0, owner: @user, accountable: Investment.new)
+    @portfolio.ensure_account_provider!(account)
+    Trading212Account::ActivitiesProcessor.new(@portfolio.reload).process
+    content = "Action,Time (UTC),ID,Gross Total,Currency (Gross Total)\nWithdrawal,2026-06-01 00:00:00+00:00,bank-out,-500,EUR\n"
+    statement = @portfolio.trading212_statements.create!(user: @user, checksum: "funding-out",
+      rows: Trading212Statement::Parser.new(content).parse)
+    statement.apply!(actor: @user)
+    Trading212Account::ActivitiesProcessor.new(@portfolio.reload).process
+
+    entry = account.entries.sole
+    assert_equal "funds_movement", entry.transaction.kind
+    assert_nil entry.transaction.investment_activity_label
+    assert_nil entry.transaction.transfer
+    assert_equal 500.to_d, entry.amount
+  end
+
   test "unknown action missing ID and changed amount are conflicts not guessed imports" do
     statement = build_statement
     rows = statement.rows

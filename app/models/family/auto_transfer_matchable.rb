@@ -333,7 +333,8 @@ module Family::AutoTransferMatchable
 
     # Trading 212's generic cash API types include purchases and cashback. Only
     # statement-confirmed funding movements are automatic transfer candidates.
-    # Restrict the rule to the split Cash role, leaving all other providers alone.
+    # Restrict split Cash and CSV-classified combined rows. Leave legacy
+    # combined funding matching and all other providers unchanged.
     def trading212_transfer_eligible_sql(entry_alias)
       <<~SQL.squish
         (:restrict_trading212_cash = FALSE OR NOT EXISTS (
@@ -343,7 +344,7 @@ module Family::AutoTransferMatchable
           WHERE t212_ap.account_id = #{entry_alias}.account_id
             AND t212_ap.provider_type = 'Trading212Account'
             AND (
-              (t212_pa.kind = 'cash' AND COALESCE(t212_tx.extra -> 'trading212_statement' ->> 'action', '') NOT IN ('Deposit', 'Withdrawal'))
+              ((t212_pa.kind = 'cash' OR t212_tx.extra ? 'trading212_statement') AND COALESCE(t212_tx.extra -> 'trading212_statement' ->> 'action', '') NOT IN ('Deposit', 'Withdrawal'))
               OR (#{entry_alias}.source = 'trading212' AND t212_tx.extra -> 'trading212' ->> 'funding_type' = 'referral_reward')
             )
         ))
