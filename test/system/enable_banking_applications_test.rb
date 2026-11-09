@@ -18,7 +18,7 @@ class EnableBankingApplicationsTest < ApplicationSystemTestCase
     Tempfile.create([ "example-application", ".pem" ]) do |file|
       file.write(key)
       file.flush
-      within "dialog[open]" do
+      within "form[action='#{create_application_enable_banking_items_path}']" do
         fill_in "Application label", with: "Second application"
         select "🇩🇪 Germany", from: "Country"
         fill_in "Application ID", with: "second-app"
