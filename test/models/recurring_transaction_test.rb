@@ -40,6 +40,32 @@ class RecurringTransactionTest < ActiveSupport::TestCase
     assert_includes recurring.errors[:status], "can't be blank"
   end
 
+  test "variable income series forecast and monthly equivalent follow the last actual receipt not the seed" do
+    travel_to Date.new(2026, 11, 9) do
+      series = build_recurring(amount: -4000, bill_type: "income", expected_day_of_month: 28,
+        last_occurrence_date: Date.new(2026, 10, 28), next_expected_date: Date.new(2026, 11, 28))
+      series.variable_income = true
+      series.save!
+      october = series.recurring_occurrences.find_or_create_by!(original_due_on: Date.new(2026, 10, 28)) do |occurrence|
+        occurrence.assign_attributes(family: @family, due_on: Date.new(2026, 10, 28), currency: "USD")
+      end
+      entry = @account.entries.create!(name: "Payroll", date: october.due_on, amount: -3100, currency: "USD", entryable: Transaction.new)
+      RecurringTransaction::Allocator.new(october).allocate!(entry: entry)
+
+      assert_equal Money.new(3100, "USD"), series.forecast_amount_money
+      assert_equal Money.new(-3100, "USD"), series.monthly_equivalent_amount
+      assert_equal(-3100.to_d, series.projected_entry.amount)
+      assert_equal(-4000.to_d, series.reload.amount)
+      assert_equal Money.new(4000, "USD"), series.forecast_amount_money(on: Date.new(2026, 10, 28))
+
+      # Fixed-income forecasts retain their declared price even with different
+      # actual payment history on the same source.
+      series.update!(variable_income: false)
+      assert_equal Money.new(4000, "USD"), series.forecast_amount_money
+      assert_equal Money.new(-4000, "USD"), series.monthly_equivalent_amount
+    end
+  end
+
   # end_after_count is a permitted parameter and the generator materialises a
   # finite plan whole, so an absurd value is not a silly setting: it is one
   # request deciding how far the table grows. 100,000 wrote 100,000 rows.

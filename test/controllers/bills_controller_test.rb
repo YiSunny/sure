@@ -96,6 +96,39 @@ class BillsControllerTest < ActionDispatch::IntegrationTest
     assert_match "Rent", response.body
   end
 
+  test "variable detected income shows its actual receipt estimate in both all bills layouts and paycheck management" do
+    travel_to Date.new(2026, 11, 9) do
+      series = create_bill(name: "Variable Example Payroll", amount: -4000, bill_type: "income", manual: false,
+        expected_day_of_month: 28, last_occurrence_date: Date.new(2026, 10, 28), next_expected_date: Date.new(2026, 11, 28))
+      series.update!(variable_income: true)
+      october = series.recurring_occurrences.find_or_create_by!(original_due_on: Date.new(2026, 10, 28)) do |occurrence|
+        occurrence.assign_attributes(family: @family, due_on: Date.new(2026, 10, 28), currency: "USD")
+      end
+      entry = create_transaction_entry(name: "Variable Example Payroll", amount: -3100, date: october.due_on)
+      RecurringTransaction::Allocator.new(october).allocate!(entry: entry)
+
+      get bills_path(view: "all")
+      assert_response :success
+      assert_select "p", text: "~$3,100.00"
+      assert_select "td", text: "~$3,100.00"
+      assert_no_match(/\$4,000\.00/, response.body)
+
+      # Detected income is deliberately not a planner boundary, but its Manage
+      # row still needs the forecast rather than the seed fallback.
+      get bills_path(view: "paycheck")
+      assert_response :success
+      assert_select "p", text: "~$3,100.00"
+      assert_no_match(/\$4,000\.00/, response.body)
+
+      get bill_path(series)
+      assert_response :success
+      assert_match "Variable amount (estimate only)", response.body
+      assert_no_match(/\$4,000\.00/, response.body)
+      assert_equal(-4000.to_d, series.reload.amount)
+      assert_equal 3100.to_d, october.reload.expected_amount
+    end
+  end
+
   # A bill is something you owe. Income is not owed, an internal transfer is not owed,
   # and a paused row was explicitly set aside, so none of them belong on the list.
   test "index excludes income and inactive rows but shows debt payments" do

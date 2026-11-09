@@ -369,7 +369,17 @@ class RecurringTransaction < ApplicationRecord
   # is the honest number for "recurring commitment" style totals; summing raw
   # amounts across mixed cadences answers no meaningful question.
   def monthly_equivalent_amount
-    amount_money * (schedule.occurrences_per_year / 12.0)
+    base = variable_income? ? -forecast_amount_money : amount_money
+    base * (schedule.occurrences_per_year / 12.0)
+  end
+
+  # Series-only screens have no occurrence to resolve. They must use the same
+  # variable-income estimate as the payday rows, not the original seed amount.
+  # Before tomorrow includes a receipt settled today, but not future receipts.
+  def forecast_amount_money(on: Date.current + 1)
+    return amount_money.abs unless variable_income?
+
+    RecurringOccurrence.new(recurring_transaction: self, due_on: on, currency: currency).resolved_expected_amount_money
   end
 
   # The newest price changes, most recent first. Sorts in Ruby when a caller
@@ -744,7 +754,9 @@ class RecurringTransaction < ApplicationRecord
     return nil unless next_expected_date.future?
 
     # Use average amount for manual recurring with variance, otherwise use fixed amount
-    display_amount = if manual? && expected_amount_avg.present?
+    display_amount = if variable_income?
+      -forecast_amount_money(on: next_expected_date).amount
+    elsif manual? && expected_amount_avg.present?
       expected_amount_avg
     else
       amount

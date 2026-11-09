@@ -21,3 +21,10 @@ or payments outside the matching window require manual review.
 The usual post-sync recurring pipeline refreshes observed income and matches
 open paydays. Selecting variable income does not silently apply it to every
 income source in the household. It is not an automatic salary classifier.
+
+All Bills listings, the income-management row (including detected income that
+does not participate in paycheck planning), and detail forecasts use the same
+last-received estimate. They prefix variable-income forecasts with `~`. The
+stored seed amount remains an editable fallback, not the amount last received.
+Closed occurrences retain their own actual received amounts; monthly/annualized
+forecasts must not be mistaken for historical income totals.

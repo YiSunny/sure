@@ -371,4 +371,27 @@ module BillsHelper
     series = occurrence.recurring_transaction
     !series.amount_fixed? || series.has_amount_variance?
   end
+
+  # Request-local reuse: a series can appear in the responsive list, desktop
+  # table and detail, but the last-settled receipt need only be read once.
+  def bills_series_amount_money(series, on: Date.current + 1)
+    @bills_series_amounts ||= {}
+    @bills_series_amounts[[ series.id, on ]] ||= series.forecast_amount_money(on: on)
+  end
+
+  def bills_series_monthly_amount_money(series)
+    return series.monthly_equivalent_amount.abs unless series.variable_income?
+
+    bills_series_amount_money(series) * (series.schedule.occurrences_per_year / 12.0)
+  end
+
+  def bills_amount_rule_label(series)
+    return t("recurring_transactions.form.income_variable") if series.variable_income?
+
+    if series.has_amount_variance?
+      t("bills.detail.rule_amount_range", min: format_money(series.expected_amount_min_money), max: format_money(series.expected_amount_max_money))
+    else
+      format_money(bills_series_amount_money(series))
+    end
+  end
 end

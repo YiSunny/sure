@@ -43,7 +43,7 @@
           </p>
         </div>
         <div class="flex items-center gap-1 shrink-0">
-          <p class="text-sm text-primary tabular-nums privacy-sensitive"><%= format_money(occurrence&.resolved_expected_amount_money || Money.new(series.amount.abs, series.currency)) %></p>
+          <p class="text-sm text-primary tabular-nums privacy-sensitive"><%= "~" if series.variable_income? %><%= format_money(occurrence&.resolved_expected_amount_money || bills_series_amount_money(series)) %></p>
           <%= render DS::Link.new(
                 icon: "pencil",
                 variant: "icon",
