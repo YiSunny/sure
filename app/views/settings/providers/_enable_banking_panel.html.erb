@@ -15,6 +15,9 @@
     <%= render DS::Alert.new(message: error_msg, variant: :error) %>
   <% end %>
 
+  <%= render DS::Link.new(text: t("enable_banking_items.applications.title"), href: new_application_enable_banking_items_path,
+                          data: { turbo_frame: "modal" }) %>
+
   <%
     # Use local family variable if available (e.g., from Sidekiq broadcast), otherwise fall back to Current.family (HTTP requests)
     family = local_assigns[:family] || Current.family
@@ -85,7 +88,8 @@
     <%= form.text_area :client_certificate,
                         label: t("settings.providers.enable_banking_panel.client_certificate_label"),
                         placeholder: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
-                        rows: 6,
+                         rows: 6,
+                         value: "",
                         class: "form-field__input font-mono text-xs",
                         disabled: has_authenticated_connections && !is_new_record %>
 
@@ -96,16 +100,11 @@
 
   <% items = local_assigns[:enable_banking_items] || @enable_banking_items || family.enable_banking_items.where.not(client_certificate: nil) %>
   <% if items&.any? %>
-    <%
-      # Find the first item with valid session to use for "Add Connection" button
-      item_for_new_connection = items.find(&:session_valid?)
-      # Check if any item needs initial connection (configured but no session yet)
-      item_needing_connection = items.find { |i| !i.session_valid? && !i.session_expired? }
-    %>
     <div class="border-t border-primary pt-4 space-y-3">
       <% items.each do |item| %>
         <div class="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-container border border-primary">
           <div class="flex items-center gap-3">
+            <%= render "enable_banking_items/application_identity", item: item %>
             <% if item.syncing? %>
               <div class="w-2 h-2 bg-inverse rounded-full animate-pulse"></div>
               <div>
@@ -143,6 +142,14 @@
 
           <div class="flex flex-wrap items-center gap-2">
             <% if item.session_valid? %>
+              <%= render DS::Button.new(
+                text: t("enable_banking_items.applications.add_bank"),
+                icon: "plus",
+                variant: :outline,
+                size: :sm,
+                href: new_connection_enable_banking_item_path(item),
+                data: { turbo_method: :post, turbo_frame: "modal" }
+              ) %>
               <%= render DS::Button.new(
                 text: t("settings.providers.enable_banking_panel.sync"),
                 icon: "refresh-cw",
@@ -185,18 +192,6 @@
         </div>
       <% end %>
 
-      <%# Add Connection button below the list - only show if we have a valid session to copy credentials from %>
-      <% if item_for_new_connection %>
-        <div class="flex justify-center pt-2">
-          <%= render DS::Button.new(
-            text: t("settings.providers.enable_banking_panel.add_connection"),
-            icon: "plus",
-            href: new_connection_enable_banking_item_path(item_for_new_connection),
-            variant: :primary,
-            data: { turbo_method: :post, turbo_frame: "modal" }
-          ) %>
-        </div>
-      <% end %>
     </div>
   <% end %>
 </div>

@@ -1,6 +1,19 @@
 ---
 en:
   enable_banking_items:
+    applications:
+      title: Add another Enable Banking application
+      help: Add separate application credentials, for example for another household member. Existing bank connections will not change. After saving, select Connect bank next to this application and authorize the account owner's bank login. Family administrators manage these connections; separate keys do not make provider administration private.
+      name: Application label
+      key_file: Private key file (.pem)
+      callback: "Your Enable Banking application's allowed redirect URL must include %{url}."
+      save: Save separate application
+      created: Application saved. Select Connect bank next to its label to authorize your bank, then complete account setup while signed in as the account owner.
+      select_key: Select the private key file downloaded from Enable Banking.
+      key_too_large: The private key file must be no larger than 32 KB.
+      invalid_key: Select a valid, unencrypted RSA private key PEM file. Public keys and certificates alone cannot authorize an application.
+      identifier: "Application ID: %{id}"
+      add_bank: Add bank using this application
     errors:
       api_error: "A communication error occurred with the bank."
       network_unreachable: "The banking service is temporarily unreachable. Please try again later."

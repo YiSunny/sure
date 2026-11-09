@@ -1,0 +1,24 @@
+<%= turbo_frame_tag "modal" do %>
+  <%= render DS::Dialog.new do |dialog| %>
+    <% dialog.with_header(title: t("enable_banking_items.applications.title")) %>
+    <% dialog.with_body do %>
+      <div class="space-y-4">
+        <%= render DS::Alert.new(message: t("enable_banking_items.applications.help")) %>
+        <% if @enable_banking_item.errors.any? %>
+          <%= render DS::Alert.new(message: @enable_banking_item.errors.full_messages.to_sentence, variant: :error) %>
+        <% end %>
+        <%= styled_form_with model: @enable_banking_item, url: create_application_enable_banking_items_path,
+                             namespace: :new_application, multipart: true, data: { turbo: false }, class: "space-y-3" do |form| %>
+          <%= form.text_field :name, label: t("enable_banking_items.applications.name"), required: true %>
+          <%= form.select :country_code, country_options,
+                          { label: t("settings.providers.enable_banking_panel.country_label"), include_blank: t("settings.providers.enable_banking_panel.select_country") },
+                          { required: true } %>
+          <%= form.text_field :application_id, label: t("settings.providers.enable_banking_panel.application_id_label"), required: true, autocomplete: "off" %>
+          <%= form.file_field :client_certificate_file, label: t("enable_banking_items.applications.key_file"), accept: ".pem", required: true %>
+          <p class="text-sm text-secondary"><%= t("enable_banking_items.applications.callback", url: enable_banking_callback_url) %></p>
+          <%= render DS::Button.new(text: t("enable_banking_items.applications.save"), type: "submit") %>
+        <% end %>
+      </div>
+    <% end %>
+  <% end %>
+<% end %>

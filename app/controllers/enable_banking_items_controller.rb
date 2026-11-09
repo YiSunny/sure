@@ -1,11 +1,30 @@
 class EnableBankingItemsController < ApplicationController
   include EnableBankingItems::MapsHelper
   before_action :set_enable_banking_item, only: [ :update, :destroy, :sync, :select_bank, :authorize, :reauthorize, :setup_accounts, :complete_account_setup, :new_connection ]
-  before_action :require_admin!, only: [ :new, :create, :link_accounts, :select_existing_account, :link_existing_account, :update, :destroy, :sync, :select_bank, :authorize, :reauthorize, :setup_accounts, :complete_account_setup, :new_connection ]
+  before_action :require_admin!, only: [ :new, :create, :new_application, :create_application, :link_accounts, :select_existing_account, :link_existing_account, :update, :destroy, :sync, :select_bank, :authorize, :reauthorize, :setup_accounts, :complete_account_setup, :new_connection ]
   skip_before_action :verify_authenticity_token, only: [ :callback ]
 
   def new
     @enable_banking_item = Current.family.enable_banking_items.build
+  end
+
+  def new_application
+    @enable_banking_item = Current.family.enable_banking_items.build(country_code: Current.family.country)
+  end
+
+  def create_application
+    # Always build a separate connection; never update or copy another
+    # application's credentials when adding a second person's application.
+    @enable_banking_item = Current.family.enable_banking_items.build(enable_banking_item_params.except(:client_certificate))
+    @enable_banking_item.client_certificate = EnableBankingItem::CredentialUpload.read(params.dig(:enable_banking_item, :client_certificate_file))
+    if @enable_banking_item.save
+      redirect_to settings_providers_path, notice: t("enable_banking_items.applications.created"), status: :see_other
+    else
+      render :new_application, status: :unprocessable_entity
+    end
+  rescue ArgumentError => error
+    @enable_banking_item.errors.add(:base, error.message)
+    render :new_application, status: :unprocessable_entity
   end
 
   def create
@@ -134,7 +153,7 @@ class EnableBankingItemsController < ApplicationController
     begin
       target_item = if params[:new_connection] == "true"
         Current.family.enable_banking_items.create!(
-          name: "Enable Banking Connection",
+          name: @enable_banking_item.name,
           country_code: @enable_banking_item.country_code,
           application_id: @enable_banking_item.application_id,
           client_certificate: @enable_banking_item.client_certificate

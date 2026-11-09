@@ -2,19 +2,24 @@
   <%= render DS::Dialog.new do |dialog| %>
     <% dialog.with_header(title: t(".link_enable_banking_title")) %>
     <% dialog.with_body do %>
+        <%= render DS::Link.new(text: t("enable_banking_items.applications.title"), href: new_application_enable_banking_items_path,
+                                data: { turbo_frame: "modal" }) %>
         <% items = local_assigns[:enable_banking_items] || @enable_banking_items || Current.family.enable_banking_items.where.not(client_certificate: nil) %>
         <% if items&.any? %>
-            <%
-            # Find the first item with valid session to use for "Add Connection" button
-            item_for_new_connection = items.find(&:session_valid?)
-            # Check if any item needs initial connection (configured but no session yet)
-            item_needing_connection = items.find { |i| !i.session_valid? && !i.session_expired? }
-            %>
             <div class="border-t border-primary pt-4 space-y-3">
             <% items.each do |item| %>
                 <div class="flex items-center justify-between p-3 rounded-lg bg-container border border-primary">
                 <div class="flex items-center gap-3">
+                    <%= render "enable_banking_items/application_identity", item: item %>
                     <% if item.session_valid? %>
+                    <%= render DS::Button.new(
+                      text: t("enable_banking_items.applications.add_bank"),
+                      icon: "plus",
+                      href: new_connection_enable_banking_item_path(item),
+                      variant: :outline,
+                      size: :sm,
+                      data: { turbo_method: :post, turbo_frame: "modal" }
+                    ) %>
                     <div class="w-2 h-2 bg-success rounded-full"></div>
                     <div>
                         <p class="text-sm font-medium text-primary"><%= item.aspsp_name || t(".connected_bank") %></p>
@@ -72,18 +77,6 @@
                 </div>
             <% end %>
 
-            <%# Add Connection button below the list - only show if we have a valid session to copy credentials from %>
-            <% if item_for_new_connection %>
-                <div class="flex justify-center pt-2">
-                <%= render DS::Button.new(
-                  text: t(".add_connection"),
-                  icon: "plus",
-                  href: new_connection_enable_banking_item_path(item_for_new_connection),
-                  variant: :primary,
-                  data: { turbo_method: :post, turbo_frame: "modal" }
-                ) %>
-                </div>
-            <% end %>
             </div>
         <% else %>
             <div class="space-y-4">

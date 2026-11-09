@@ -4,6 +4,7 @@
 
     <% dialog.with_body do %>
       <div class="space-y-4" data-controller="bank-search">
+        <%= render "enable_banking_items/application_identity", item: @enable_banking_item %>
         <p class="text-sm text-secondary">
           <%= t(".description") %>
         </p>
