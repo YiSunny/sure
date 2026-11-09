@@ -51,6 +51,7 @@ class RecurringTransaction
         occurrence_count: 0
       )
       recurring.frequency_preset = attrs[:frequency_preset]
+      recurring.variable_income = attrs[:variable_income] if attrs.key?(:variable_income)
       recurring.frequency_interval = attrs[:frequency_interval]
       recurring.frequency_interval_unit = attrs[:frequency_interval_unit]
       recurring.first_due_on = attrs[:first_due_on]

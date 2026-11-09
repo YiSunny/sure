@@ -83,6 +83,9 @@ class RecurringTransaction
     def allocate_matched!(entry:, state:, confidence:, signals:)
       occurrence.with_lock do
         with_entry_lock(entry) do
+          if occurrence.recurring_transaction.variable_income? && entry_capacity(entry, entry.amount.abs) != entry.amount.abs
+            return nil
+          end
           allocated, source_amount, source_currency = resolve_amounts(nil, entry)
           return nil unless allocated.positive?
 
@@ -165,9 +168,15 @@ class RecurringTransaction
       occurrence.reload
 
       if occurrence.scheduled?
-        occurrence.close!("paid", source: "auto") if close_worthy?
+        if close_worthy?
+          if occurrence.recurring_transaction.variable_income?
+            occurrence.update!(expected_amount: occurrence.allocations.confirmed.sum(:allocated_amount))
+          end
+          occurrence.close!("paid", source: "auto")
+        end
       elsif occurrence.paid? && occurrence.closed_source == "auto" && !close_worthy?
         occurrence.reopen!
+        occurrence.update!(expected_amount: nil) if occurrence.recurring_transaction.variable_income?
       end
     end
 
@@ -202,6 +211,18 @@ class RecurringTransaction
       end
 
       def close_worthy?
+        if occurrence.recurring_transaction.variable_income?
+          confirmed = occurrence.allocations.confirmed.to_a
+          return false unless confirmed.size == 1
+
+          allocation = confirmed.first
+          entry = allocation.entry
+          return true if entry.nil? && allocation.from_user_created?
+
+          return entry.present? && entry.amount.negative? && entry.account_id == occurrence.recurring_transaction.account_id &&
+            entry.currency == occurrence.currency && allocation.allocated_amount == entry.amount.abs &&
+            allocation.source_amount == entry.amount.abs
+        end
         expected = occurrence.resolved_expected_amount
         return false unless expected.positive?
 
@@ -238,7 +259,11 @@ class RecurringTransaction
             # allocates nothing, never the occurrence's outstanding balance.
             capacity = entry_capacity(entry, entry_total)
             remaining = occurrence.remaining_amount
-            remaining.positive? ? [ capacity, remaining ].min : capacity
+            if occurrence.recurring_transaction.variable_income?
+              capacity
+            else
+              remaining.positive? ? [ capacity, remaining ].min : capacity
+            end
           end
 
           [ allocated, allocated, entry.currency ]
@@ -312,7 +337,7 @@ class RecurringTransaction
         end
 
         expected = occurrence.resolved_expected_amount
-        if expected.positive? && occurrence.allocations.confirmed.count == 1 && close_worthy?
+        if !series.variable_income? && expected.positive? && occurrence.allocations.confirmed.count == 1 && close_worthy?
           deviation_pct = (entry.amount.abs - expected).abs / expected * 100
           current = BigDecimal((hints["learned_tolerance_pct"] || 0).to_s)
 

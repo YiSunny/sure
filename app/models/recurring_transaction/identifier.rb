@@ -124,7 +124,7 @@ class RecurringTransaction
         if claimed
           # Manual rows are refreshed by the dedicated variance pass; ended
           # rows are tombstones (the user dismissed or cancelled the bill).
-          next if claimed.manual? || claimed.ended?
+          next if claimed.manual? || claimed.ended? || claimed.variable_income?
 
           update_claimed_series(claimed, pattern)
           next
@@ -138,7 +138,7 @@ class RecurringTransaction
           # save. Re-read and treat it as the claimed series.
           racer = family.recurring_transactions.find_by(identity_conditions(pattern, scoped: candidates.any?))
           next unless racer
-          next if racer.manual? || racer.ended?
+          next if racer.manual? || racer.ended? || racer.variable_income?
 
           update_claimed_series(racer, pattern)
         end
@@ -159,7 +159,8 @@ class RecurringTransaction
     # matching for recurring transfers.
     def update_manual_recurring_transactions(_since_date)
       manual_recurring_transactions = family.recurring_transactions
-        .where(manual: true, status: "active", destination_account_id: nil)
+        .where(status: "active", destination_account_id: nil)
+        .where("manual = TRUE OR matcher_hints @> ?", { variable_income: true }.to_json)
         .includes(:account)
         .to_a
 
@@ -326,6 +327,9 @@ class RecurringTransaction
       end
 
       def nearest_within_tolerance(candidates, target_amount)
+        if target_amount.negative? && (variable = candidates.find(&:variable_income?))
+          return variable
+        end
         candidates
           .select { |recurring| within_tolerance?(target_amount, recurring.amount) }
           .min_by { |recurring| (recurring.amount - target_amount).abs }
@@ -424,7 +428,7 @@ class RecurringTransaction
           .joins("INNER JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
           .where(entries: { entryable_type: "Transaction", currency: currencies })
           .where("entries.date >= ?", lookback_date)
-          .select("entries.*, transactions.merchant_id AS transaction_merchant_id")
+          .select("entries.*, transactions.merchant_id AS transaction_merchant_id, transactions.kind AS transaction_kind")
           .order(date: :desc)
 
         # Legacy manual rows without account_id can match any account in the
@@ -452,7 +456,11 @@ class RecurringTransaction
         # against here could already have skewed) so unrelated charges that
         # happen to share a merchant/day don't get averaged in (issue #2936
         # follow-up).
-        return false unless RecurringTransaction.amount_within_variance_band?(entry.amount, recurring.amount)
+        if recurring.variable_income?
+          return false unless entry.amount.negative? && !entry.excluded? && entry.read_attribute("transaction_kind") == "standard"
+        else
+          return false unless RecurringTransaction.amount_within_variance_band?(entry.amount, recurring.amount)
+        end
         return false unless recurring.schedule.matches_day?(entry.date)
 
         if recurring.merchant_id.present?

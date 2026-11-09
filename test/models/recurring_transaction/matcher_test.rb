@@ -123,6 +123,91 @@ class RecurringTransaction::MatcherTest < ActiveSupport::TestCase
     assert occurrence.reload.paid?, "the exact tier is what advances the paycheck planner"
   end
 
+  test "variable income matches a much smaller payday and forecasts from the full actual receipt" do
+    income = create_series(name: "ACME PAYROLL", amount: -2000, day_offset: 0, bill_type: "income")
+    income.update!(variable_income: true)
+    occurrence, future = income.recurring_occurrences.order(:due_on).first(2)
+    entry = create_entry(amount: -750, date: Date.current, name: "ACME PAYROLL")
+    assert_equal 1, @matcher.run!
+
+    occurrence.reload
+    assert occurrence.paid?
+    assert_equal 750.to_d, occurrence.expected_amount
+    assert_equal 750.to_d, occurrence.allocations.sole.allocated_amount
+    assert_equal entry.id, occurrence.allocations.sole.entry_id
+    assert occurrence.allocations.sole.match_signals.key?("variable_income")
+    assert_not occurrence.allocations.sole.match_signals.key?("amount")
+    assert_equal 750.to_d, future.resolved_expected_amount
+    assert_equal(-2000.to_d, income.reload.amount)
+    assert_equal 0, Matcher.new(@family).run!
+    assert_equal(-750.to_d, entry.reload.amount)
+  end
+
+  test "variable income takes a larger paycheck whole rather than capping it at the estimate" do
+    income = create_series(name: "ACME PAYROLL", amount: -1000, day_offset: 0, bill_type: "income")
+    income.update!(variable_income: true)
+    occurrence, future = income.recurring_occurrences.order(:due_on).first(2)
+    create_entry(amount: -4200, date: Date.current, name: "ACME PAYROLL")
+    assert_equal 1, @matcher.run!
+    assert occurrence.reload.paid?
+    assert_equal 4200.to_d, occurrence.allocations.sole.allocated_amount
+    assert_equal 4200.to_d, occurrence.expected_amount
+    assert_equal 4200.to_d, future.resolved_expected_amount
+    assert_not occurrence.overpaid?
+  end
+
+  test "variable income leaves two possible receipts and competing income sources unmatched" do
+    income = create_series(name: "ACME PAYROLL", amount: -2000, day_offset: 0, bill_type: "income")
+    income.update!(variable_income: true)
+    create_entry(amount: -500, date: Date.current, name: "ACME PAYROLL")
+    second = create_entry(amount: -2200, date: Date.current, name: "ACME PAYROLL")
+    assert_equal 0, @matcher.run!
+    assert_empty income.recurring_occurrences.first.allocations
+
+    second.destroy!
+    twin = create_series(name: "ACME PAYROLL", amount: -4000, day_offset: 0, bill_type: "income", dedup_scope: "other")
+    twin.update!(variable_income: true)
+    assert_equal 0, Matcher.new(@family).run!
+    assert_empty income.recurring_occurrences.first.allocations
+  end
+
+  test "variable income requires the scoped source sign currency and payday and excludes pending transfers" do
+    income = create_series(name: "ACME PAYROLL", amount: -2000, day_offset: -20, bill_type: "income")
+    income.update!(variable_income: true)
+    occurrence = income.recurring_occurrences.order(:due_on).first
+    late = create_entry(amount: -900, date: Date.current, name: "ACME PAYROLL")
+    assert_nil @matcher.explain(occurrence, late), "an overdue estimate cannot absorb an unrelated later deposit"
+
+    valid = create_entry(amount: -900, date: occurrence.due_on, name: "ACME PAYROLL")
+    assert @matcher.explain(occurrence, valid)
+    valid.update!(amount: 900)
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.update!(amount: -900, name: "OTHER SOURCE")
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.update!(name: "ACME PAYROLL", currency: "EUR")
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.update!(currency: "USD", account: accounts(:connected))
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.update!(account: @account, excluded: true)
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.update!(excluded: false)
+    valid.transaction.update!(kind: "funds_movement")
+    assert_nil Matcher.new(@family).explain(occurrence, valid)
+    valid.transaction.update!(kind: "standard", extra: { "simplefin" => { "pending" => true } })
+    assert_equal 0, Matcher.new(@family).run!
+    assert_empty occurrence.allocations
+  end
+
+  test "fixed income and expense bills keep their existing amount tolerance" do
+    income = create_series(name: "FIXED PAYROLL", amount: -2000, day_offset: 0, bill_type: "income")
+    bill = create_series(name: "RENT", amount: 2000, day_offset: 0)
+    create_entry(amount: -750, date: Date.current, name: "FIXED PAYROLL")
+    create_entry(amount: 750, date: Date.current, name: "RENT")
+    assert_equal 0, @matcher.run!
+    assert_empty income.recurring_occurrences.first.allocations
+    assert_empty bill.recurring_occurrences.first.allocations
+  end
+
   test "weekly windows clamp so one payment cannot satisfy two weeks" do
     series = create_series(name: "CLEANER", amount: 100, day_offset: 0, preset: "weekly")
     occurrences = series.recurring_occurrences.order(:due_on).limit(2).to_a

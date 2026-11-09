@@ -527,6 +527,31 @@ class RecurringTransaction::IdentifierTest < ActiveSupport::TestCase
     end
   end
 
+  test "variable income refreshes widely varying receipts without creating another amount cluster" do
+    travel_to Date.new(2026, 11, 9) do
+      account = accounts(:depository)
+      recurring = @family.recurring_transactions.create!(account: account, merchant: merchants(:netflix), amount: -2000,
+        currency: "USD", bill_type: "income", expected_day_of_month: 28,
+        last_occurrence_date: Date.new(2026, 9, 28), next_expected_date: Date.new(2026, 10, 28), status: "active", manual: false)
+      recurring.update!(variable_income: true)
+      [ 3000, 2900, 2800, 750 ].each_with_index do |amount, i|
+        account.entries.create!(name: "Payroll", date: Date.new(2026, 7 + i, 28), amount: -amount, currency: "USD",
+          entryable: Transaction.new(merchant: merchants(:netflix)))
+      end
+      assert_no_difference "@family.recurring_transactions.count" do
+        @identifier.identify_recurring_patterns
+      end
+      recurring.reload
+      assert_equal 4, recurring.occurrence_count
+      assert_equal Date.new(2026, 10, 28), recurring.last_occurrence_date
+      assert_equal Date.new(2026, 11, 28), recurring.next_expected_date
+      assert_equal(-3000.to_d, recurring.expected_amount_min)
+      assert_equal(-750.to_d, recurring.expected_amount_max)
+      assert_equal "last", recurring.amount_strategy
+      assert_equal 4, recurring.matching_transactions.size
+    end
+  end
+
   test "updates manual recurring variance across 1 to 31 month boundary" do
     travel_to Date.new(2026, 6, 7) do
       account = @family.accounts.first

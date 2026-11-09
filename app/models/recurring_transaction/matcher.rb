@@ -138,6 +138,13 @@ class RecurringTransaction
       end
 
       def tier_for(candidate, ordered)
+        # With no amount gate, two deposits from the same source in the same
+        # payday window are not distinguishable. Do not choose the first one.
+        if candidate.occurrence.recurring_transaction.variable_income? && ordered.any? { |other|
+            other.occurrence.id == candidate.occurrence.id && other.entry.id != candidate.entry.id
+          }
+          return nil
+        end
         if candidate.confidence >= EXACT_TIER && !pending_entry?(candidate.entry) && unambiguous?(candidate, ordered)
           :exact
         elsif candidate.confidence >= HIGH_TIER
@@ -284,7 +291,9 @@ class RecurringTransaction
 
           window_start = occurrence.effective_due_on - early
           window_end = occurrence.effective_due_on + late
-          window_end = [ window_end, Date.current ].max if occurrence.derived_state == :overdue
+          if occurrence.derived_state == :overdue && !series.variable_income?
+            window_end = [ window_end, Date.current ].max
+          end
 
           window_start..window_end
         end
@@ -314,6 +323,11 @@ class RecurringTransaction
       def identity_matches?(series, entry)
         return false unless entry.currency == series.currency
         return false if series.account_id.present? && entry.account_id != series.account_id
+        if series.variable_income?
+          return false unless entry.account_id == series.account_id && entry.amount.negative? && !entry.excluded?
+          return false unless entry.entryable.kind == "standard"
+          return false if entry.entryable.extra.dig("trading212", "classification_pending") == true
+        end
 
         expense_series = series.amount.positive?
         return false if expense_series != entry.amount.positive?
@@ -354,8 +368,12 @@ class RecurringTransaction
           signals[:name] = 0.35
         end
 
-        signals[:amount] = amount_score(series, expected, entry.amount.abs)
-        return [ BigDecimal("0"), signals ] if signals[:amount].nil?
+        if series.variable_income?
+          signals[:variable_income] = 0.30
+        else
+          signals[:amount] = amount_score(series, expected, entry.amount.abs)
+          return [ BigDecimal("0"), signals ] if signals[:amount].nil?
+        end
 
         signals[:date] = date_score(occurrence, entry.date)
         signals[:account] = 0.10 if entry.account_id == series.account_id || series.account_id.nil?

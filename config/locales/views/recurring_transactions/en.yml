@@ -105,7 +105,11 @@ en:
       submit_income: Save income
       income_name_label: Source
       income_name_placeholder: Employer, client, side gig
-      income_amount_label: Amount per paycheck
+      income_amount_label: Expected amount per paycheck
+      income_amount_mode: Income amount
+      income_fixed: Fixed amount
+      income_variable: Variable amount (estimate only)
+      income_variable_hint: Variable income requires a specific deposit account. A single unambiguous payment from this source near payday counts as received at its actual amount, even when it differs greatly. Future estimates use the last received payment; the entered amount is the fallback. Multiple possible deposits require manual review.
       income_due_on_label: Next payday
       income_account_label: Deposits into
       income_frequency_hint: How often you're paid. Pick the day details to match your payday.

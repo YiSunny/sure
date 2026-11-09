@@ -367,6 +367,39 @@ class RecurringTransactionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal I18n.t("recurring_transactions.create.success_income"), flash[:notice]
   end
 
+  test "create and edit expose variable income without changing fixed bill matching" do
+    post recurring_transactions_url, params: { recurring_transaction: {
+      name: "Variable payroll", amount: "2000", account_id: accounts(:depository).id,
+      first_due_on: Date.current.iso8601, frequency_preset: "monthly", is_income: "1", variable_income: "true"
+    } }
+    assert_redirected_to bills_path
+    income = @family.recurring_transactions.find_by!(name: "Variable payroll")
+    assert income.variable_income?
+    assert_equal "last", income.amount_strategy
+    get edit_recurring_transaction_path(income)
+    assert_select "select[name=?] option[value=true][selected]", "recurring_transaction[variable_income]"
+    patch recurring_transaction_path(income), params: { recurring_transaction: { variable_income: "false" } }
+    assert_not income.reload.variable_income?
+    assert_equal "fixed", income.amount_strategy
+
+    get edit_recurring_transaction_path(@recurring_transaction)
+    assert_select "select[name=?]", "recurring_transaction[variable_income]", count: 0
+    patch recurring_transaction_path(@recurring_transaction), params: { recurring_transaction: { variable_income: "true" } }
+    assert_response :unprocessable_entity
+    assert_not @recurring_transaction.reload.variable_income?
+  end
+
+  test "variable income requires a specific writable account" do
+    assert_no_difference "RecurringTransaction.count" do
+      post recurring_transactions_url, params: { recurring_transaction: {
+        name: "Unscoped payroll", amount: "2000", first_due_on: Date.current.iso8601,
+        frequency_preset: "monthly", is_income: "1", variable_income: "true"
+      } }
+    end
+    assert_response :unprocessable_entity
+    assert_match "specific deposit account", response.body
+  end
+
   test "create declares a manual bill and materializes its occurrences" do
     due = Date.current + 16
 

@@ -50,6 +50,39 @@ class RecurringTransaction::AllocatorTest < ActiveSupport::TestCase
     assert_equal 1500, occurrence.remaining_amount
   end
 
+  test "variable income manual receipt pins actual amount and removing it restores the estimate" do
+    @rent.update!(bill_type: "income", amount: -2000, variable_income: true)
+    @occurrence.reload.update!(expected_amount: nil)
+    entry = entry_for(-600)
+    allocation = @allocator.allocate!(entry: entry)
+    assert @occurrence.reload.paid?
+    assert_equal 600.to_d, @occurrence.expected_amount
+    assert_equal 600.to_d, allocation.allocated_amount
+    assert_nil @rent.reload.matcher_hints["learned_tolerance_pct"]
+    @allocator.unallocate!(allocation)
+    assert @occurrence.reload.scheduled?
+    assert_nil @occurrence.expected_amount
+    assert_equal 2000.to_d, @occurrence.resolved_expected_amount
+  end
+
+  test "partial income allocations do not mean the whole variable paycheck arrived" do
+    @rent.update!(bill_type: "income", amount: -2000, variable_income: true)
+    entry = entry_for(-3000)
+    @allocator.allocate!(entry: entry, amount: 500)
+    assert @occurrence.reload.scheduled?
+    assert_equal 500.to_d, @occurrence.confirmed_allocated
+    assert_nil @allocator.allocate_matched!(entry: entry, state: "confirmed", confidence: 1, signals: {})
+    assert_equal 1, @occurrence.allocations.count
+  end
+
+  test "variable income cannot opt a bill or an accountless source out of amount checks" do
+    @rent.variable_income = true
+    assert_not @rent.valid?
+    assert_match "specific deposit account", @rent.errors.full_messages.join
+    @rent.assign_attributes(bill_type: "income", amount: -2000, account: nil)
+    assert_not @rent.valid?
+  end
+
   test "a price rise still updates an open occurrence nobody has paid against" do
     @occurrence.update!(expected_amount: nil)
 

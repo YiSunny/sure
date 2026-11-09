@@ -55,6 +55,13 @@
       </div>
     <% end %>
 
+    <% if income %>
+      <%= f.select :variable_income,
+            [[t(".income_fixed"), "false"], [t(".income_variable"), "true"]],
+            { label: t(".income_amount_mode"), selected: recurring_transaction.variable_income.to_s } %>
+      <p class="text-xs text-secondary"><%= t(".income_variable_hint") %></p>
+    <% end %>
+
     <%= f.collection_select :account_id,
           Current.user.accessible_accounts.visible.alphabetically,
           :id, :name,

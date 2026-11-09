@@ -58,6 +58,7 @@ class RecurringTransaction < ApplicationRecord
   validate :anchor_required_for_intervals
   validate :end_mode_fields_consistent
   validate :bill_type_matches_shape
+  validate :variable_income_has_scoped_source
 
   normalizes :payment_url, with: ->(url) { normalize_payment_url(url) }
 
@@ -120,6 +121,28 @@ class RecurringTransaction < ApplicationRecord
   # keeps reading the merchant directly.
   def display_name
     name.presence || merchant&.name
+  end
+
+  # Explicit opt-in, stored alongside the other per-series matching choices.
+  # An average/last amount strategy alone does not relax matching for bills.
+  def variable_income
+    matcher_hints.to_h["variable_income"] == true
+  end
+
+  def variable_income?
+    typed_income? && variable_income
+  end
+
+  def variable_income=(value)
+    enabled = ActiveModel::Type::Boolean.new.cast(value) || false
+    self.matcher_hints = matcher_hints.to_h.merge("variable_income" => enabled)
+    self.amount_strategy = enabled ? "last" : "fixed"
+  end
+
+  def variable_income_has_scoped_source
+    return unless variable_income
+
+    errors.add(:base, :variable_income_requires_account) unless typed_income? && amount.to_d.negative? && account.present?
   end
 
   def merchant_or_name_present
@@ -597,6 +620,10 @@ class RecurringTransaction < ApplicationRecord
 
     # Amount/cadence-scoped Transaction entries on this account (or family).
     base = account.present? ? account.entries : family.entries
+    if variable_income?
+      base = base.joins("JOIN transactions ON transactions.id = entries.entryable_id AND entries.entryable_type = 'Transaction'")
+        .where(excluded: false).where("entries.amount < 0").where(transactions: { kind: "standard" })
+    end
     entries = day_of_month_scope(
       amount_window_scope(base.where(entryable_type: "Transaction").where(currency: currency))
     ).order(date: :desc)
@@ -769,6 +796,8 @@ class RecurringTransaction < ApplicationRecord
     # Transaction entries whose amount fits the pattern: exact, or within the
     # observed variance band when one has been recorded.
     def amount_window_scope(relation)
+      return relation if variable_income?
+
       if has_amount_variance?
         relation.where("entries.amount BETWEEN ? AND ?", expected_amount_min, expected_amount_max)
       else
